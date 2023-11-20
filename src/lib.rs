@@ -2,6 +2,7 @@ pub mod urconfig;
 pub mod serviceconf;
 pub mod cmdlineparser;
 pub mod arbiter;
+pub mod frontserv;
 
 #[macro_export]
 macro_rules! toktor_send {
