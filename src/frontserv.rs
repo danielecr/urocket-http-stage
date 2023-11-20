@@ -55,7 +55,7 @@ tracing_subscriber::registry()
 .with(tracing_subscriber::fmt::layer())
 .init();
 */
-async fn run_front(arbiter: ArbiterHandler) {
+pub async fn run_front(arbiter: ArbiterHandler) {
     // let db = Db::default();
 
     // Compose the routes
@@ -104,6 +104,7 @@ async fn todos_index(
     //let todos = db.read().unwrap();
 
     //let Query(pagination) = pagination.unwrap_or_default();
+    
     Json(true)
     //let todos = todos
     //    .values()

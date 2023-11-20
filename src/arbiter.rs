@@ -11,7 +11,7 @@ use std::collections::HashMap;
 
 use serde::{Serialize, Deserialize};
 use toktor::actor_handler;
-use tokio::sync::{mpsc, oneshot};
+use tokio::sync::{mpsc, oneshot::{self, Receiver}};
 
 use std::sync::Arc;
 use tokio::sync::Mutex as TMutex;
@@ -89,6 +89,38 @@ impl Arbiter {
 
 actor_handler!({} => Arbiter, ArbiterHandler, ProxyMsg);
 
+use crate::toktor_send;
+
+impl ArbiterHandler {
+    pub async fn add_request(&self) -> (Receiver<ForHttpResponse>, String) {
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        let unique = String::from("123");
+        let msg_sub = ProxyMsg::AddSubscriber {
+            request_id: unique.clone(),
+            timeout: 40000,
+            respond_to: tx
+        };
+        match toktor_send!(self, msg_sub).await {
+            _ => {}//println!("anyway")
+        };
+        (rx,unique)
+    }
+
+    pub async fn fulfill_request(&self, request_id: &str, payload: ForHttpResponse) -> Result<Receiver<bool>,()> {
+        let (tx2, rx2) = tokio::sync::oneshot::channel();
+        let msg_ff = ProxyMsg::FulfillRequest {
+            request_id: request_id.to_string(),
+            response_payload: payload,
+            respond_to: tx2
+        };
+        
+        match toktor_send!(self, msg_ff).await {
+            _ => println!("sent the ff message")
+        };
+        Ok(rx2)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use crate::{toktor_send, toktor_new};
@@ -97,28 +129,10 @@ mod tests {
     #[tokio::test]
     async fn arbiter_run() {
         let arbiter = toktor_new!(ArbiterHandler);
-        let (tx, rx) = tokio::sync::oneshot::channel();
-        let msg_sub = ProxyMsg::AddSubscriber {
-            request_id: String::from("123"),
-            timeout: 40000,
-            respond_to: tx
-        };
-        
-        match toktor_send!(arbiter, msg_sub).await {
-            _ => println!("anyway")
-        };
+        let (rx, req_id) = arbiter.add_request().await;
         tokio::time::sleep(std::time::Duration::from_millis(500)).await;
         let rpay = ForHttpResponse::default();
-        let (tx2, rx2) = tokio::sync::oneshot::channel();
-        let msg_ff = ProxyMsg::FulfillRequest {
-            request_id: String::from("123"),
-            response_payload: rpay.clone(),
-            respond_to: tx2
-        };
-        
-        match toktor_send!(arbiter, msg_ff).await {
-            _ => println!("sent the ff message")
-        };
+        let rx2  = arbiter.fulfill_request(&req_id.clone(), rpay.clone()).await.unwrap();
         // should arrive rx: delivering payload rpay
         match rx.await {
             Ok(m) => {

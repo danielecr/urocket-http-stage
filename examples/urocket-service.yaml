@@ -1,3 +1,5 @@
 servicename: mynastyphpport
 port: 8080
 socketpath: /tmp/pathtokube.sock
+
+openapi: pets-oas.yaml
