@@ -47,11 +47,6 @@ pub fn parse() -> URConfig {
     }
 
     let configfile = cli.config.to_string_lossy().to_string();
-    let rabbiturl = cli.rabbiturl.trim_end_matches("/").to_string() + "/%2f";
-    //println!("Value of confing: {:?}",cli.config.to_string_lossy());
-    //println!("Value of confing: {:?}",rabbiturl);
-    //if let Some(configfile) = cli.config.as_deref() {
-    //}
     let debug: u8 = match cli.debug {
         0 => 0_u8,
         1 => 1_u8,
