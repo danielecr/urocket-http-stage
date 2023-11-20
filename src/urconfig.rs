@@ -8,7 +8,7 @@
  * to RabbitMQ service (whose parameters are extracted form cmdline, env)
  */
 
-use crate::serviceconf::{ServiceConf, self};
+use crate::serviceconf::ServiceConf;
 
 #[derive(Debug)]
 pub enum UCommands {

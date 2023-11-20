@@ -1,10 +1,8 @@
 
-use tokio::io::{self, AsyncReadExt};
-
 use urocket_http_stage::cmdlineparser::parse;
 //use urocket_http_stage::serviceconf::ServiceConf;
 
-use urocket_http_stage::{toktor_send, toktor_new};
+use urocket_http_stage::toktor_new;
 
 use urocket_http_stage::arbiter::*;
 

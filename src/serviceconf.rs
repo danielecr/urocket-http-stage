@@ -1,12 +1,10 @@
-/** ServiceConf - reppresent the file servicedef.yaml as the configuration of the service
- * it includes all service configuration: register-notiservice.notitypes is a map
- * between notification type name and the notification type definition
- */
-use std::collections::HashMap;
+/// ServiceConf - reppresent the file servicedef.yaml as the configuration of the service
+/// it includes all service configuration: register-notiservice.notitypes is a map
+/// between notification type name and the notification type definition
 
 use tokio::fs::File;
-use tokio::io::{self, AsyncReadExt};
-use serde::{Serialize, Deserialize};
+use tokio::io::{AsyncReadExt};
+use serde::{Deserialize};
 
 
 #[derive(Deserialize,Debug)]
