@@ -14,5 +14,6 @@ tokio = { version = "1.23.0", features = ["macros", "time", "rt-multi-thread", "
 tokio-stream = "0.1.14"
 clap = { version = "4.4.7", features = ["derive", "string"] }
 axum = { version = "0.6.20"}
+hyperlocal = "0.8"
 
 toktor = { path = "toktor" }

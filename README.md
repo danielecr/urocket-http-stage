@@ -100,3 +100,18 @@ print_r ($result);
 ```
 
 
+## Testing curl
+
+Is a dummy hostname required?
+
+> curl --unix-socket /var/run/docker.sock http://localhost/images/json
+
+or:
+
+> curl --unix-socket /var/run/docker.sock http:/images/json
+
+see:
+https://superuser.com/a/925610
+
+> cURL 7.50 and up requires a valid URL to be provided, including a hostname, so to run the above examples with cURL 7.50, a "dummy" hostname has to be added
+

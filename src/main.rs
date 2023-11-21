@@ -7,6 +7,7 @@ use urocket_http_stage::toktor_new;
 use urocket_http_stage::arbiter::*;
 
 use urocket_http_stage::frontserv::run_front;
+use urocket_http_stage::backserv::run_backserv;
 
 #[tokio::main]
 async fn main() -> Result<(),()> {
@@ -14,7 +15,11 @@ async fn main() -> Result<(),()> {
     config.parse_configfile().await;
 
     let arbiter = toktor_new!(ArbiterHandler);
-    run_front(arbiter).await;
+    let a2 = arbiter.clone();
+    tokio::spawn(async move {
+        run_front(a2.clone()).await;
+    });
+    run_backserv("/tmp/listenur.sock", arbiter).await;
     println!("Hello, world!");
     Ok(())
 }
