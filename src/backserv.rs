@@ -12,6 +12,7 @@ use axum::{
     Json, Router,
 };
 use serde::{Deserialize, Serialize};
+use tokio::join;
 use std::{
     collections::HashMap,
     sync::{Arc, RwLock},
@@ -23,7 +24,7 @@ use std::{
 //use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 // use uuid::Uuid;
 
-use crate::arbiter::{ArbiterHandler, self};
+use crate::arbiter::{ArbiterHandler, self, ForHttpResponse};
 
 /*
 tracing_subscriber::registry()
@@ -92,7 +93,10 @@ async fn todos_index(
     //let todos = db.read().unwrap();
 
     //let Query(pagination) = pagination.unwrap_or_default();
-    
+    arbiter.fulfill_request("123", ForHttpResponse{
+        code: 123,
+        data: serde_json::Value::Bool(true)
+    }).await.unwrap();
     Json(true)
     //let todos = todos
     //    .values()

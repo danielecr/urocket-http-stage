@@ -20,24 +20,28 @@
 ///  - the arbiter manage a timeout on the request, and return a standard reply
 /// 
 
-struct FrontServ {
-    
-}
+use bytes::Bytes;
+//use axum::body::Bytes;
+//use axum::body::Full;
+use hyper::Error;
+use http_body_util::Full;
+use hyper::server::conn::http1;
+use hyper::service::Service;
+use hyper::{body::Incoming as IncomingBody, Request, Response};
+use tokio::net::TcpListener;
+use hyper_util::rt::TokioIo;
 
-use axum::{
-    error_handling::HandleErrorLayer,
-    extract::{Path, Query, State},
-    http::StatusCode,
-    response::IntoResponse,
-    routing::{get, patch},
-    Json, Router,
-};
+use std::future::Future;
+use std::net::SocketAddr;
+use std::pin::Pin;
+use std::sync::Mutex;
+
 use serde::{Deserialize, Serialize};
 use std::{
     collections::HashMap,
     sync::{Arc, RwLock},
     //time::Duration, simd::SimdConstPtr,
-    net::SocketAddr
+    //net::SocketAddr
 };
 //use tower::{BoxError, ServiceBuilder};
 //use tower_http::trace::TraceLayer;
@@ -55,63 +59,85 @@ tracing_subscriber::registry()
 .with(tracing_subscriber::fmt::layer())
 .init();
 */
-pub async fn run_front(arbiter: ArbiterHandler) {
+pub async fn run_front(arbiter: &ArbiterHandler) {
     // let db = Db::default();
+    let addr: SocketAddr = ([0, 0, 0, 0], 8080).into();
 
-    // Compose the routes
-    let app = Router::new()
-        .route("/todos", get(todos_index))
-        .with_state(arbiter);
-        /*
-        // Add middleware to all routes
-        .layer(
-            ServiceBuilder::new()
-                .layer(HandleErrorLayer::new(|error: BoxError| async move {
-                    if error.is::<tower::timeout::error::Elapsed>() {
-                        Ok(StatusCode::REQUEST_TIMEOUT)
-                    } else {
-                        Err((
-                            StatusCode::INTERNAL_SERVER_ERROR,
-                            format!("Unhandled internal error: {error}"),
-                        ))
-                    }
-                }))
-                .timeout(Duration::from_secs(10))
-                .layer(TraceLayer::new_for_http())
-                .into_inner(),
-        )
-        */
-    
-    /*
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:3000")
-    .await
-    .unwrap();
-    */
-    //tracing::debug!("listening on {}", listener.local_addr().unwrap());
-    //axum::serve(listener, app).await.unwrap();
-    let addr = SocketAddr::from(([0, 0, 0, 0], 8080));
-    axum::Server::bind(&addr)
-    .serve(app.into_make_service())
-    .await
-    .unwrap();
+    let listener = TcpListener::bind(addr).await.unwrap();
+    println!("Listening on http://{}", addr);
+    loop {
+        let (stream, _) = listener.accept().await.unwrap();
+        let io = TokioIo::new(stream);
+
+        let svc = Svc::new(arbiter);
+
+        tokio::task::spawn(async move {
+            if let Err(err) = http1::Builder::new()
+                .serve_connection(
+                    io,
+                    svc,
+                )
+                .await
+            {
+                println!("Failed to serve connection: {:?}", err);
+            }
+        });
+    }
 }
 
-
-
-async fn todos_index(
-    State(arbiter): State<ArbiterHandler>,
-) -> impl IntoResponse {
-    //let todos = db.read().unwrap();
-
-    //let Query(pagination) = pagination.unwrap_or_default();
-    
-    Json(true)
-    //let todos = todos
-    //    .values()
-    //    //.skip(pagination.offset.unwrap_or(0))
-    //    //.take(pagination.limit.unwrap_or(usize::MAX))
-    //    .cloned()
-    //    .collect::<Vec<_>>();
-//
-    //Json(todos)
+#[derive(Clone)]
+struct Svc<T> {
+    arbiter: T
 }
+
+impl<T: Clone> Svc<T> {
+    fn new(arbiter:&T) -> Svc<T> {
+        Self { arbiter: arbiter.clone() }
+    }
+}
+
+impl Service<Request<IncomingBody>> for Svc<ArbiterHandler> {
+    type Response = Response<Full<Bytes>>;
+    type Error = hyper::Error;
+    type Future = Pin<Box<dyn Future<Output = Result<Self::Response, Self::Error>> + Send>>;
+
+    fn call(&self, req: Request<IncomingBody>) -> Self::Future {
+        let a = self.arbiter.clone();
+        Box::pin(async move {
+            println!("received {:?}",req);
+
+            let (rx,req_id) = a.add_request().await;
+            println!("I stored the reqid :: {}",&req_id);
+            //let exresp  = rx.await;
+            match rx.await {
+                Ok(exresp) => {
+                    //serde_json::to_string(value)
+                    let response = serde_json::to_string(&exresp).unwrap();
+                    let a = Response::builder().status(200).body(Full::new(Bytes::from(response))).unwrap();
+                    Ok(a)
+                    //Ok(Response::builder().body(str).)
+                    //let response = Response::new(str);
+                    //let (mut parts, body) = response.into_parts();
+                    //Ok(Response::from_parts(parts, body))
+                }
+                Err(e) => {
+                    let b = Response::builder().status(500).body(Full::new(Bytes::from(""))).unwrap();
+                    Ok(b)
+                }
+            }
+            
+        })
+    }
+}
+
+// use https://docs.rs/axum/latest/axum/routing/struct.Router.html#method.nest_service
+// and tower service:
+// https://docs.rs/tower-service/0.3.2/tower_service/trait.Service.html
+
+// Everything that can be handled by proxyto
+// would be maybe-filter-in, executed, maybe-filter-out, maybe-timedout
+// 
+// match proxyto(arbiter).await {
+//   Ok(Consumed) => return Consumed
+//   Err(e) =>
+// }

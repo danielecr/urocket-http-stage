@@ -17,7 +17,7 @@ async fn main() -> Result<(),()> {
     let arbiter = toktor_new!(ArbiterHandler);
     let a2 = arbiter.clone();
     tokio::spawn(async move {
-        run_front(a2.clone()).await;
+        run_front(&a2).await;
     });
     run_backserv("/tmp/listenur.sock", arbiter).await;
     println!("Hello, world!");

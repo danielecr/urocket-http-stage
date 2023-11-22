@@ -115,3 +115,65 @@ https://superuser.com/a/925610
 
 > cURL 7.50 and up requires a valid URL to be provided, including a hostname, so to run the above examples with cURL 7.50, a "dummy" hostname has to be added
 
+## Message in / Message out
+
+A message type is identified by (path, verb), as defined in OpenAPI definition `paths.[path].[verb]`.
+There are 4 distinct stage for a message type:
+
+1. incoming: defined as http verb + payload
+2. transported-in: defined as process execution env
+3. transported-out: defined by ipc channel
+4. outgoing: defined as http verb and payload
+
+Stages 1. and 4. can add a layer of validation for payload,
+incoming and/or outgoing, the validation is based on Open API definition.
+
+For 2. and 3. : **both are a map between "http-path+verb"**:
+
+```
+- path:
+    "get/pets":
+      get:
+        validate-in: false
+        in: {{ process-env }}
+        out: {{ ipc-channel }}
+        validate-out: false
+      post: ...
+        in: {{ process-env }}
+        out: {{ ipc-channel }}
+```
+
+### process-env
+
+```
+wd: /path/to/wd
+env: - env array
+cmd: command line
+channel: cmdline | stdin | etc
+```
+
+channel *cmdline*:
+```
+channel:
+  type: cmdline
+  urlparam:
+    mode: off | on | env | cmdline-first
+  encoding: json
+```
+
+`urlparam`: include the request url "[path].[verb]", mode:
+
+* off: do not include
+* on or env: include in env.URLPATH + env.HTTPVERB
+* cmdline-first: include "[path].[verb]" as the first argument in command line
+
+channel *stdin* (it is a pipe):
+```
+channel:
+  type: stdin
+  urlparam:
+    mode: off | on | env | cmdline-first
+  encoding: json
+```
+
+urlparam as above, but cmdline-first means 'add a first line with "[path].[verb]\n"'

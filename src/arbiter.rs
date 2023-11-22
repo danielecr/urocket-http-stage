@@ -91,33 +91,56 @@ actor_handler!({} => Arbiter, ArbiterHandler, ProxyMsg);
 
 use crate::toktor_send;
 
+/*
+
+type AddFutureType = std::pin::Pin<Box<dyn std::future::Future<Output = Receiver<ForHttpResponse>> + Send> >;
+type FulFillFutureType = std::pin::Pin<Box<dyn std::future::Future<Output = Result<Receiver<bool>,()>> + Send>>;
+trait ProxyArbiter {
+    //type Response = Receiver<ForHttpResponse>;
+    //type Future = std::pin::Pin<Box<dyn std::future::Future<Output = Self::Response> + Send> >;
+    //fn add_request(&self) -> Future;
+    //// Pin<Box<dyn Future<Output = Receiver<ForHttpResponse>> + Send> >
+    fn add_request(&self) -> std::pin::Pin<Box<dyn std::future::Future<Output = Receiver<ForHttpResponse>> + Send> >;
+    fn fulfill_request(&self, request_id: &str, payload: ForHttpResponse) -> FulFillFutureType;
+}
+*/
+
 impl ArbiterHandler {
+    //type Response = Receiver<ForHttpResponse>;
+    //type Future = std::pin::Pin<Box<dyn std::future::Future<Output = Self::Response> + Send> >;
     pub async fn add_request(&self) -> (Receiver<ForHttpResponse>, String) {
-        let (tx, rx) = tokio::sync::oneshot::channel();
-        let unique = String::from("123");
-        let msg_sub = ProxyMsg::AddSubscriber {
-            request_id: unique.clone(),
-            timeout: 40000,
-            respond_to: tx
-        };
-        match toktor_send!(self, msg_sub).await {
-            _ => {}//println!("anyway")
-        };
-        (rx,unique)
+    //fn add_request(&self) -> AddFutureType {
+        //Box::pin(async {
+            let (tx, rx) = tokio::sync::oneshot::channel();
+            let unique = String::from("123");
+            let msg_sub = ProxyMsg::AddSubscriber {
+                request_id: unique.clone(),
+                timeout: 40000,
+                respond_to: tx
+            };
+            match toktor_send!(self, msg_sub).await {
+                _ => {}//println!("anyway")
+            };
+            (rx,unique)
+        //})
     }
 
     pub async fn fulfill_request(&self, request_id: &str, payload: ForHttpResponse) -> Result<Receiver<bool>,()> {
-        let (tx2, rx2) = tokio::sync::oneshot::channel();
-        let msg_ff = ProxyMsg::FulfillRequest {
-            request_id: request_id.to_string(),
-            response_payload: payload,
-            respond_to: tx2
-        };
-        
-        match toktor_send!(self, msg_ff).await {
-            _ => println!("sent the ff message")
-        };
-        Ok(rx2)
+    //fn fulfill_request(&self, request_id: &str, payload: ForHttpResponse) -> FulFillFutureType {
+        //Box::pin(async {
+            
+            let (tx2, rx2) = tokio::sync::oneshot::channel();
+            let msg_ff = ProxyMsg::FulfillRequest {
+                request_id: request_id.to_string(),
+                response_payload: payload,
+                respond_to: tx2
+            };
+            
+            match toktor_send!(self, msg_ff).await {
+                _ => println!("sent the ff message")
+            };
+            Ok(rx2)
+        //})
     }
 }
 
