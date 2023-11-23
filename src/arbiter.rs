@@ -146,7 +146,7 @@ impl ArbiterHandler {
 
 #[cfg(test)]
 mod tests {
-    use crate::{toktor_send, toktor_new};
+    use crate::toktor_new;
     use super::*;
 
     #[tokio::test]

@@ -131,49 +131,58 @@ incoming and/or outgoing, the validation is based on Open API definition.
 For 2. and 3. : **both are a map between "http-path+verb"**:
 
 ```
-- path:
-    "get/pets":
-      get:
-        validate-in: false
-        in: {{ process-env }}
-        out: {{ ipc-channel }}
-        validate-out: false
-      post: ...
-        in: {{ process-env }}
-        out: {{ ipc-channel }}
+paths:
+  "get/pets":
+    get:
+      validate-in: false
+      inject: {{ process-env }}
+      logstdout: true | false
+      outtake: usocket://one/the/uuuid-123123-ggess-2123123
+      validate-out: false
+    post: ...
+      in: {{ process-env }}
+      out: {{ ipc-channel }}
 ```
+
+Note on **logstdout**: the service should be able to log stdout of the script.
+This can be supported by specifying special header in incoming http request (http header),
+or by other means, TBD.
 
 ### process-env
 
+The process is started with these env variables settled:
+
+```
+URIPATH=/path/in/request/uri
+REQUEST_ID={unique request id used to match the result}
+```
+
 ```
 wd: /path/to/wd
-env: - env array
+env: [string]
 cmd: command line
-channel: cmdline | stdin | etc
+channel: cmdline | stdin | ...
+encoding: json
 ```
 
-channel *cmdline*:
-```
-channel:
-  type: cmdline
-  urlparam:
-    mode: off | on | env | cmdline-first
-  encoding: json
-```
+If "channel: cmdline" then payload is passed as escaped commandline argument, i.e.:
 
-`urlparam`: include the request url "[path].[verb]", mode:
+> [cmd] '{"my": "json", "payload": "et cetera", "et": true, "cetera": false}'
 
-* off: do not include
-* on or env: include in env.URLPATH + env.HTTPVERB
-* cmdline-first: include "[path].[verb]" as the first argument in command line
+If "channel: stdin" then payload pass through the stdin
 
-channel *stdin* (it is a pipe):
+### outtake
+
+example:
+
 ```
-channel:
-  type: stdin
-  urlparam:
-    mode: off | on | env | cmdline-first
-  encoding: json
+outtake: usocket://uri/{req_id}
 ```
 
-urlparam as above, but cmdline-first means 'add a first line with "[path].[verb]\n"'
+it is a uri scheme, uscoket means the socketpath defined at top level,
+`{req_id}` must be replaced  with the matching request id, ie.:
+
+1. the process read ENV["REQUEST_ID] from environment
+2. the process write reply payload in usocket://uri/$ENV["REQUEST_ID]
+
+No others uri scheme are supported, service should refuse to start (if it starts with other schemes then it's a bug)

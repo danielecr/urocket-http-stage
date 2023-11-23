@@ -1,17 +1,57 @@
+use std::collections::HashMap;
+
 /// ServiceConf - reppresent the file servicedef.yaml as the configuration of the service
 /// it includes all service configuration: register-notiservice.notitypes is a map
 /// between notification type name and the notification type definition
 
+// for uri scheme Other(T) as `outtake` validation of "usocket://mypath/bla"
+// see: https://docs.rs/http/latest/src/http/uri/scheme.rs.html#21
+// use http::uri::Uri;
 use tokio::fs::File;
-use tokio::io::{AsyncReadExt};
-use serde::{Deserialize};
+use tokio::io::AsyncReadExt;
+use serde::{Deserialize, Serialize};
 
+#[derive(Serialize,Deserialize,Debug)]
+pub struct ProcEnv {
+    pub wd: String,
+    pub env: Vec<String>,
+    pub cmd: String,
+    pub encoding: String,
+    pub channel: String
+}
+
+#[derive(Serialize,Deserialize,Debug,Default)]
+pub struct VerbAction {
+    #[serde(default)]
+    pub validatein: bool,
+    #[serde(default)]
+    pub inject: Option<ProcEnv>,
+    pub outtake: String
+}
+
+#[derive(Serialize,Deserialize,Debug)]
+pub struct PathVerb {
+    get: VerbAction,
+    post: Option<VerbAction>,
+//    #[serde(rename="post")]
+//    Post{ validate_in: bool,
+//        inject: ProcEnv },
+//    Delete{ validate_in: bool,
+//        inject: ProcEnv },
+}
+
+#[derive(Serialize,Deserialize,Debug)]
+pub struct PathVerbT {
+    get: VerbAction
+}
 
 #[derive(Deserialize,Debug)]
 pub struct ServiceConf {
     pub servicename: String,
     pub socketpath: String,
     pub port: String,
+    //pub paths: HashMap<String, serde_json::Value>
+    pub paths: HashMap<String, PathVerb>
 }
 
 async fn read_conf_file(conf_file: &str) -> String {
@@ -32,6 +72,7 @@ impl ServiceConf {
 
         match serde_yaml::from_str::<ServiceConf>(&content) {
             Ok(s) => {
+                println!("{:?}",&s);
                 s
             },
             Err(e) => {

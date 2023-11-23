@@ -24,7 +24,12 @@ use bytes::Bytes;
 //use axum::body::Bytes;
 //use axum::body::Full;
 use hyper::Error;
-use http_body_util::Full;
+//use http_body_util::{Full, BodyExt};
+use http_body_util::{combinators::BoxBody, BodyExt, Empty, Full};
+
+//use http_body_util::{BodyExt, StreamBody};
+
+use hyper::body::Frame;
 use hyper::server::conn::http1;
 use hyper::service::Service;
 use hyper::{body::Incoming as IncomingBody, Request, Response};
@@ -104,7 +109,31 @@ impl Service<Request<IncomingBody>> for Svc<ArbiterHandler> {
     fn call(&self, req: Request<IncomingBody>) -> Self::Future {
         let a = self.arbiter.clone();
         Box::pin(async move {
-            println!("received {:?}",req);
+            let uri = req.uri().clone();
+            //println!("req: {:?}",req);
+            //let bod = req.collect().await.unwrap().to_bytes();
+            //println!("received {:?}", bod);
+            let frame_stream = req.into_body().map_frame(|frame| {
+                let frame = if let Ok(data) = frame.into_data() {
+                    data.iter()
+                        .map(|byte| byte.to_ascii_uppercase())
+                        .collect::<Bytes>()
+                } else {
+                    Bytes::new()
+                };
+
+                Frame::data(frame)
+            }).collect();
+            //let (parts, body) = req.into_parts();
+            //let body = serde_json::from_slice(&body).unwrap();
+            let bites =  frame_stream.await.unwrap().to_bytes();
+            //println!("received {:?}", bites);
+            let str = Vec::<u8>::from(bites.as_ref());
+            let astr = match std::str::from_utf8(&str) {
+                Ok(s) => s,
+                Err(e) => {eprintln!("err{}",e); ""}
+            };
+            println!("thats string {} for {}", astr, uri.path());
 
             let (rx,req_id) = a.add_request().await;
             println!("I stored the reqid :: {}",&req_id);

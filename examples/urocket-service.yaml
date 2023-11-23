@@ -3,3 +3,28 @@ port: 8080
 socketpath: /tmp/pathtokube.sock
 
 openapi: pets-oas.yaml
+
+paths:
+  /get/pets:
+    get:
+      validatein: false
+      inject:
+        wd: /home/daniele/Development
+        env:
+          - MYENV=CI
+        cmd: /usr/bin/echo
+        channel: "cmdline"
+        encoding: json
+      logstdout: true
+      outtake: usocket://uri/{req_id}
+      validate-out: false
+#    post:
+#      inject:
+#        wd: /home/daniele/Documenti
+#        env:
+#          - MYENV=CI
+#        urlparam-mode: true
+#        encoding: json
+#        cmd: /usr/bin/echo
+#        channel: "cmdline"
+#      outtake: usocket://response/uri/{req_id}
