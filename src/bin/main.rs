@@ -19,7 +19,7 @@ async fn main() -> Result<(),()> {
     tokio::spawn(async move {
         run_front(&a2).await;
     });
-    run_backserv("/tmp/listenur.sock", arbiter).await;
+    run_backserv("/tmp/listenur.sock", &arbiter).await;
     println!("Hello, world!");
     Ok(())
 }
