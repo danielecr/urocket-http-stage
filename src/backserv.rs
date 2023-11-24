@@ -110,9 +110,17 @@ impl Service<Request<IncomingBody>> for Svc<ArbiterHandler> {
                 Err(e) => {eprintln!("err{}",e); ""}
             };
             println!("thats string {} for {}", astr, uri.path());
+            let parts: Vec<_> = uri.path().split("/").collect();
+            println!("parts: {:?}",parts);
+            let req_id = if parts.len() == 3 {
+                parts[2].to_string()
+            } else {
+                String::from("123")
+            };
+            println!("matching req_id:: {}", &req_id);
 
-            let resp = a.fulfill_request("123", ForHttpResponse{
-                code: 123,
+            let resp = a.fulfill_request(&req_id, ForHttpResponse{
+                code: 200,
                 data: serde_json::Value::Bool(true)
             });
 

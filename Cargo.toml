@@ -15,5 +15,6 @@ hyper = {version ="1.0", features = ["full", "server"] }
 hyper-util = { version="0.1.1", features= ["full"] }
 http-body-util = "0.1"
 bytes = "1.5"
+uuid = { version = "1.6.1", features = ["v4"]}
 
 toktor = { path = "toktor" }

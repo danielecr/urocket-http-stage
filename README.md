@@ -8,9 +8,11 @@ Openapi reference:
 
 Scripting language are supported by specifying the executable
 
-The openapi is used with `callbacks` in paths.path object:
+The openapi is used as it is, without any change, example:
 
 ```
+paths:
+  /pets:
     post:
       tags:
         - pet
@@ -30,52 +32,30 @@ The openapi is used with `callbacks` in paths.path object:
             schema:
               $ref: '#/components/schemas/Pet'
         required: true
-      callbacks:
-        cbusesocket:
-          $ref: '#/components/schemas/cbusesocket'
 ```
 
-The idea is to use `cbusesocket` to define a callback using unixsocket for reply
-Eventually there is `cbdirectstream` to take standard output as a stream to be proxy.
-Or even a `cbusepipe` to open a pipe with the script called.
-
-the cbusesocket is defined in schemas as a regular object:
+The service attach the backend callback using its own configuration file, `urocket-service.yaml`,
+that replicate the `paths.uri.method` schema to define each `uri.method` callback infos:
 
 ```
-components:
-  schemas:
-    cbusesocket:
-      type: object
-      properties:
-        socketpath:
-          type: string
-        pathname:
-          type: string
-          description: full path of the php script
-        wd:
-          type: string
-          description: initial working directory
+paths:
+  /get/pets:
+    get:
+      validatein: false
+      inject:
+        wd: /src/scripts/php
         env:
-          type: array
-	  items:
-            type: string
-            description: key = value string
-        format:
-          type: string
-          description: json, xml, or parameters to pass to the php script
-        callbackurl:
-          type: string
-          description: callback url complete of the unix socket, socket://url_to_cb/
-        callback_verb:
-          type: string
-          enum:
-            - get
-            - post
-            - put
+          - MYENV=CI
+        cmd: /usr/bin/echo
+        channel: "cmdline"
+        encoding: json
+      logstdout: true
+      outtake: usocket://uri/{req_id}
+      validate-out: false
 ```
 
-From the point of view of the called script, some parameters are accessible in the environment:
-format, callbackurl, callback_verb, orig_url_path
+This will execute `/usr/bin/echo` on work dir defined in `wd`, with env ... see below for the
+details.
 
 ## Using the socket: php example
 
@@ -186,3 +166,33 @@ it is a uri scheme, uscoket means the socketpath defined at top level,
 2. the process write reply payload in usocket://uri/$ENV["REQUEST_ID]
 
 No others uri scheme are supported, service should refuse to start (if it starts with other schemes then it's a bug)
+
+
+## TODO
+
+It's a kind of plan.
+
+This project is on POC stage. What is in **already**:
+
+* there is an arbiter that store request_id and dispatch back response via a tokio channel
+* frontserv::run_front() listen on port 8080 and use arbiter to store req_id
+* backserv::run_backserv() listen on socket file and use arbiter to match and dispatch message to frontserv request waiting on channel.
+
+**TODOs**:
+
+- arbiter should create a real uuid
+
+It is missing, an `RequestVisor` actor:
+
+* a struct that accept configuration (defined in `urocket-service.yaml`) and to dispatch request
+accordingly.
+* has a static method `::new(conf, arbiter)`
+* has a method `wait_for(req: Request<IncomingBody>) -> (rx: Receiver<ForHttpResponse>)`
+* `wait_for` match the req.uri() and req.method() to execute the right action (an OS process)
+* `wait_for` use the exitCode of the process to eventually retry or giving a failure response (i.e., http 500 code)
+* `wait_for` create a new channel that will be returned to the caller, `(rv_channel_rx: Receiver<ForHttpResponse>, rv_channel_tx)`, and tokio::spawn an async that wait for the arbiter channel, or the exitCode, or the (optional) timeout. Based on which of those complete, tx.send() the payload (the payload can be the one received from the process or a placeholder created in case of timeout or error).
+* (`wait_for` spawned) if the message comes from backend in-time, RequestVisor ask the Arbiter to remove the request, otherwise the request id and the rx_channel is moved to another "actor", collecting staff about it.
+* `wait_for` return rv_channel_rx
+* has a method `push_fulfill(req_id: String, ForHttpResponse)-> Result<bool,ErrorBack>` that return Ok(true) on success, ErrorBack when req_id is not matched, or anything else.
+* `push_fulfill` match the req_id and send data over the right channel.
+* if `push_fulfill` can not match the req_id, thus it return ErrorBack, the backserv use that for sending a feedback, over the unix socket, to the caller (for example the php script).

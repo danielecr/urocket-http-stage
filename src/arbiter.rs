@@ -112,7 +112,7 @@ impl ArbiterHandler {
     //fn add_request(&self) -> AddFutureType {
         //Box::pin(async {
             let (tx, rx) = tokio::sync::oneshot::channel();
-            let unique = String::from("123");
+            let unique: String = uuid::Uuid::new_v4().to_string();
             let msg_sub = ProxyMsg::AddSubscriber {
                 request_id: unique.clone(),
                 timeout: 40000,
