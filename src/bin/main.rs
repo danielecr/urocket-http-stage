@@ -8,6 +8,7 @@ use urocket_http_stage::arbiter::*;
 
 use urocket_http_stage::frontserv::run_front;
 use urocket_http_stage::backserv::run_backserv;
+use urocket_http_stage::requestsvisor::RequestsVisorHandler;
 
 #[tokio::main]
 async fn main() -> Result<(),()> {

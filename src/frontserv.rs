@@ -135,7 +135,7 @@ impl Service<Request<IncomingBody>> for Svc<ArbiterHandler> {
             };
             println!("thats string {} for {}", astr, uri.path());
 
-            let (rx,req_id) = a.add_request().await;
+            let (rx,req_id) = a.add_request();
             println!("I stored the reqid :: {}",&req_id);
             //let exresp  = rx.await;
             match rx.await {

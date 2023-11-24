@@ -6,15 +6,15 @@
 ///  - the arbiter: 1. provide feedback to backserv, 2. send back response to frontserv, 3. dealloc/close the channel for synchronization
 ///  - the arbiter manage a timeout on the request, and return a standard reply
 
-extern crate toktor;
 use std::collections::HashMap;
 
 use serde::{Serialize, Deserialize};
-use toktor::actor_handler;
 use tokio::sync::{mpsc, oneshot::{self, Receiver}};
 
 use std::sync::Arc;
 use tokio::sync::Mutex as TMutex;
+extern crate toktor;
+use toktor::actor_handler;
 
 
 #[derive(Default,Serialize,Deserialize,Debug,Clone,PartialEq)]
@@ -108,7 +108,7 @@ trait ProxyArbiter {
 impl ArbiterHandler {
     //type Response = Receiver<ForHttpResponse>;
     //type Future = std::pin::Pin<Box<dyn std::future::Future<Output = Self::Response> + Send> >;
-    pub async fn add_request(&self) -> (Receiver<ForHttpResponse>, String) {
+    pub fn add_request(&self) -> (Receiver<ForHttpResponse>, String) {
     //fn add_request(&self) -> AddFutureType {
         //Box::pin(async {
             let (tx, rx) = tokio::sync::oneshot::channel();
@@ -118,9 +118,12 @@ impl ArbiterHandler {
                 timeout: 40000,
                 respond_to: tx
             };
-            match toktor_send!(self, msg_sub).await {
-                _ => {}//println!("anyway")
-            };
+            let s = self.clone();
+            tokio::spawn(async move{
+                match toktor_send!(s, msg_sub).await {
+                    _ => {}//println!("anyway")
+                };
+            });
             (rx,unique)
         //})
     }
@@ -152,7 +155,7 @@ mod tests {
     #[tokio::test]
     async fn arbiter_run() {
         let arbiter = toktor_new!(ArbiterHandler);
-        let (rx, req_id) = arbiter.add_request().await;
+        let (rx, req_id) = arbiter.add_request();
         tokio::time::sleep(std::time::Duration::from_millis(500)).await;
         let rpay = ForHttpResponse::default();
         let rx2  = arbiter.fulfill_request(&req_id.clone(), rpay.clone()).await.unwrap();

@@ -4,6 +4,9 @@ pub mod cmdlineparser;
 pub mod arbiter;
 pub mod frontserv;
 pub mod backserv;
+pub mod requestsvisor;
+pub mod restmessage;
+pub mod processcontroller;
 
 #[macro_export]
 macro_rules! toktor_send {
