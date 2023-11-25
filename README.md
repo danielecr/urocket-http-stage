@@ -1,6 +1,36 @@
 # URocket http stage
 
-It proxy requests from http to an executable.
+It proxy requests from http to an executable which is supposed to write response in a socket.
+
+Splitting the above sentence:
+- an http service that: 1. catch REST payload, 2. assign a uuid req_id
+- (*not provided*!) an executable that: 1. accept a json payload, 2. write something in a unix socket (a file)
+- an http service listening on the unix socket and match the req_id and send back to the caller
+
+```mermaid
+sequenceDiagram
+    Participant C as Client
+    Participant U as URocket
+    Participant P as Internal Process
+    C->U: write REST payload on http
+    activate U
+    U->>P: spawn(payload, req_id) process
+    activate P
+    P->>U: write(payback, req_id) on socket /tmp/urocket.sock
+    deactivate P
+    Note right of U: match req_id
+    U->>C: send payback
+    deactivate U
+    Note left of C: Our client is happy now
+```
+
+This code aims to handle req_id generation and matching, process spawn, timeout, exceptional case, logging, ... whatever is needed to make it stable enough to be used on production.
+
+The name urocket-stage-http. During the launch of a rocket on the space, at some point the rocket
+split in 2 parts and the first stage is missed. This happens when the rocket is on the cloud.
+I would call this "usefull rocket stage".
+
+Nothing to do with rust rocket, in fact the code use hyper because it needs minimal staff.
 
 Openapi reference:
 - https://swagger.io/specification/
@@ -180,19 +210,12 @@ This project is on POC stage. What is in **already**:
 
 **TODOs**:
 
-- arbiter should create a real uuid
+- RequestVisor use Arbiter and replace it in frontserv/backserv
+- ProcessController match config and RestMessage to create a process
+- ProcessController manage timeout (to kill and give back to arbiter)
+- ProcessController Timeouts maybe pinned to remove on process exit (??)
+- ProcessController should log something.
+- Log tracker: select something buffered.
+- RequestVisor accept ProcessController
+- Add an ErrorXXX struct. Fix all `.unwrap()`s
 
-It is missing, an `RequestVisor` actor:
-
-* a struct that accept configuration (defined in `urocket-service.yaml`) and to dispatch request
-accordingly.
-* has a static method `::new(conf, arbiter)`
-* has a method `wait_for(req: Request<IncomingBody>) -> (rx: Receiver<ForHttpResponse>)`
-* `wait_for` match the req.uri() and req.method() to execute the right action (an OS process)
-* `wait_for` use the exitCode of the process to eventually retry or giving a failure response (i.e., http 500 code)
-* `wait_for` create a new channel that will be returned to the caller, `(rv_channel_rx: Receiver<ForHttpResponse>, rv_channel_tx)`, and tokio::spawn an async that wait for the arbiter channel, or the exitCode, or the (optional) timeout. Based on which of those complete, tx.send() the payload (the payload can be the one received from the process or a placeholder created in case of timeout or error).
-* (`wait_for` spawned) if the message comes from backend in-time, RequestVisor ask the Arbiter to remove the request, otherwise the request id and the rx_channel is moved to another "actor", collecting staff about it.
-* `wait_for` return rv_channel_rx
-* has a method `push_fulfill(req_id: String, ForHttpResponse)-> Result<bool,ErrorBack>` that return Ok(true) on success, ErrorBack when req_id is not matched, or anything else.
-* `push_fulfill` match the req_id and send data over the right channel.
-* if `push_fulfill` can not match the req_id, thus it return ErrorBack, the backserv use that for sending a feedback, over the unix socket, to the caller (for example the php script).

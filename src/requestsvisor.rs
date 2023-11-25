@@ -150,23 +150,6 @@ mod tests {
                 println!("error {}",e);
             }
         }
-        {
-            //let str = "ciao".to_string();
-            //let v8 = Vec::<u8>::from(str);
-            let a = tokio::process::Command::new("echo").arg("test.php").arg(" world").output();
-            let oo = a.await;
-            match oo {
-                Ok(xxx)=> {
-                    println!("Execution STATUS ?? {:?}",xxx.status.success());
-                    let oo = std::str::from_utf8(&xxx.stdout).unwrap();
-                    println!("Execution STDOUT ?? {}",oo);
-                    println!("Execution STDERR ?? {:#?}",xxx.stderr);
-                }
-                Err(e) => {
-                    println!("Execution ERROR {}", e);
-                }
-            };
-        }
         match x.await {
             Ok(reason) => {
                 println!("VISOR there are no reasons: {:?}", reason);
