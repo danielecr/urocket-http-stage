@@ -31,13 +31,16 @@ use hyper::service::{Service, service_fn};
 use hyper::{body::Incoming as IncomingBody, Request, Response};
 use tokio::net::{TcpListener,UnixListener};
 use hyper_util::rt::TokioIo;
+use tokio::task::JoinError;
 
 use std::future::Future;
 use std::pin::Pin;
 
 use crate::arbiter::{ArbiterHandler, ForHttpResponse};
+use crate::requestsvisor::RequestsVisorHandler;
+use crate::restmessage::{self, RestMessage};
 
-pub async fn run_backserv(socketpath: &str, arbiter: &ArbiterHandler) {
+pub async fn run_backserv(socketpath: &str, arbiter: &RequestsVisorHandler) {
     let path = std::path::Path::new(socketpath);
 
     if path.exists() {
@@ -68,62 +71,74 @@ pub async fn run_backserv(socketpath: &str, arbiter: &ArbiterHandler) {
 
 #[derive(Clone)]
 struct Svc<T> {
-    arbiter: T
+    vh: T
 }
 
 impl<T: Clone> Svc<T> {
-    fn new(arbiter:&T) -> Svc<T> {
-        Self { arbiter: arbiter.clone() }
+    fn new(vh:&T) -> Svc<T> {
+        Self { vh: vh.clone() }
     }
 }
 
-impl Service<Request<IncomingBody>> for Svc<ArbiterHandler> {
+fn uri_extract_req_id(uri: &hyper::Uri) -> String {
+    // uri.path() is "/uri/{req_id}" -> ["","uri","{req_id}"]
+    let rid = uri.path().split("/").nth(2);
+    
+    if let Some(reqid) = rid {
+        reqid.to_string()
+    } else {
+        String::from("")
+    }
+}
+
+async fn getpayload(req: Request<IncomingBody>) -> Result<serde_json::Value,serde_json::Error> {
+    let frame_stream = req.into_body().map_frame(|frame| {
+        let frame = if let Ok(data) = frame.into_data() {
+            data.iter()
+                .map(|byte| byte.to_be())
+                .collect::<Bytes>()
+        } else {
+            Bytes::new()
+        };
+
+        Frame::data(frame)
+    }).collect();
+    //let (parts, body) = req.into_parts();
+    //let body = serde_json::from_slice(&body).unwrap();
+    let bites =  frame_stream.await.unwrap().to_bytes();
+    //println!("received {:?}", bites);
+    let str = Vec::<u8>::from(bites.as_ref());
+    let _astr = match std::str::from_utf8(&str) {
+        Ok(s) => s,
+        Err(e) => {eprintln!("err{}",e); ""}
+    };
+    println!("received payload from back: {}",_astr);
+    serde_json::from_slice(&str)
+}
+
+impl Service<Request<IncomingBody>> for Svc<RequestsVisorHandler> {
     type Response = Response<Full<Bytes>>;
     type Error = hyper::Error;
     type Future = Pin<Box<dyn Future<Output = Result<Self::Response, Self::Error>> + Send>>;
 
     fn call(&self, req: Request<IncomingBody>) -> Self::Future {
-        let a = self.arbiter.clone();
+        let vh = self.vh.clone();
         Box::pin(async move {
-            let uri = req.uri().clone();
-            //println!("req: {:?}",req);
+            let uri: hyper::Uri = req.uri().clone();
+            let req_id = uri_extract_req_id(&uri);
+            let message = match getpayload(req).await {
+                Ok(r) => {
+                    let payload = r;
+                    ForHttpResponse { code: 200, data: payload }
+                },
+                Err(e) => {
+                    eprintln!("error parsing backserv {}", e);
+                    let payload = serde_json::Value::Bool(false);
+                    ForHttpResponse { code: 500, data: payload }
+                }
+            };
+            let resp = vh.push_fulfill(&req_id, message);
             //let bod = req.collect().await.unwrap().to_bytes();
-            //println!("received {:?}", bod);
-            let frame_stream = req.into_body().map_frame(|frame| {
-                let frame = if let Ok(data) = frame.into_data() {
-                    data.iter()
-                        .map(|byte| byte.to_ascii_uppercase())
-                        .collect::<Bytes>()
-                } else {
-                    Bytes::new()
-                };
-
-                Frame::data(frame)
-            }).collect();
-            //let (parts, body) = req.into_parts();
-            //let body = serde_json::from_slice(&body).unwrap();
-            let bites =  frame_stream.await.unwrap().to_bytes();
-            //println!("received {:?}", bites);
-            let str = Vec::<u8>::from(bites.as_ref());
-            let astr = match std::str::from_utf8(&str) {
-                Ok(s) => s,
-                Err(e) => {eprintln!("err{}",e); ""}
-            };
-            println!("thats string {} for {}", astr, uri.path());
-            let parts: Vec<_> = uri.path().split("/").collect();
-            println!("parts: {:?}",parts);
-            let req_id = if parts.len() == 3 {
-                parts[2].to_string()
-            } else {
-                String::from("123")
-            };
-            println!("matching req_id:: {}", &req_id);
-
-            let resp = a.fulfill_request(&req_id, ForHttpResponse{
-                code: 200,
-                data: serde_json::Value::Bool(true)
-            });
-
             match resp.await {
                 Ok(exresp) => {
                     //serde_json::to_string(value)

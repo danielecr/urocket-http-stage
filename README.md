@@ -210,7 +210,7 @@ This project is on POC stage. What is in **already**:
 
 **TODOs**:
 
-- RequestVisor use Arbiter and replace it in frontserv/backserv
+- ~~RequestVisor use Arbiter and replace it in frontserv/backserv~~
 - ProcessController match config and RestMessage to create a process
 - ProcessController manage timeout (to kill and give back to arbiter)
 - ProcessController Timeouts maybe pinned to remove on process exit (??)
@@ -219,3 +219,53 @@ This project is on POC stage. What is in **already**:
 - RequestVisor accept ProcessController
 - Add an ErrorXXX struct. Fix all `.unwrap()`s
 
+## Current limits of tokio::process::Command
+
+This https://github.com/tokio-rs/tokio/pull/2907 is very cool
+
+anyway it is not possible to `wait4()` a process to collect resource usage, as in
+https://github.com/Sackbuoy/mem_usage :
+
+```rust
+use wait4::{ResUse, Wait4};
+let process_resources: ResUse;
+
+let _child_process: Child = match cmd.spawn() {
+    Ok(mut child) => {
+        process_resources = child.wait4()?;
+        child
+    }
+    Err(e) => return Err(Box::new(e)),
+};
+```
+
+using https://crates.io/crates/wait4
+
+That's really what is needed for stats.
+
+Also it can be desirable to have monitoring staff
+
+This https://docs.rs/tokio-metrics/latest/tokio_metrics/ monitors the internal tasks,
+but child spawned are under control of the operating system.
+
+The only way to access this infos is by procps:
+https://docs.rs/procfs/latest/procfs/process/struct.Stat.html
+
+For stats: inspect procps before calling wait() in https://doc.rust-lang.org/std/process/struct.Child.html
+
+For monitoring use procps periodically.
+
+## limits by Linux cgroups v2
+
+A more advanced (and maybe simpler) way to limit/control resource of the spawned process
+would be by using cgroups ns https://crates.io/crates/cgroups-rs
+
+It would be simpler because the only limit to control from urocket became the timeout
+for the process. Other resources would be limited by the os.
+
+The aim of this project is a kind of "it works on my machines", meaning not
+working anywhere else but on some targets system, typically are those supported
+by Kubernetes, and configured with cgroups v2 (hierarchical)
+
+And simpler is better, but a kind of ProcessDriver should be writed ad hoc, that plugs
+well in tokio async.

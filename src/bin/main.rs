@@ -16,11 +16,12 @@ async fn main() -> Result<(),()> {
     config.parse_configfile().await;
 
     let arbiter = toktor_new!(ArbiterHandler);
-    let a2 = arbiter.clone();
+    let visor_handler = toktor_new!(RequestsVisorHandler, &arbiter);
+    let vh = visor_handler.clone();
     tokio::spawn(async move {
-        run_front(&a2).await;
+        run_front(&vh).await;
     });
-    run_backserv("/tmp/listenur.sock", &arbiter).await;
+    run_backserv("/tmp/listenur.sock", &visor_handler).await;
     println!("Hello, world!");
     Ok(())
 }

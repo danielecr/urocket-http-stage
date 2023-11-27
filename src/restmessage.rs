@@ -3,6 +3,17 @@ use hyper::body::Frame;
 use http_body_util::{combinators::BoxBody, BodyExt, Empty, Full};
 use hyper::{Request, body::Incoming as IncomingBody};
 
+fn uri_extract_req_id(uri: hyper::Uri) -> String {
+    // uri.path() is "/uri/{req_id}" -> ["","uri","{req_id}"]
+    let rid = uri.path().split("/").nth(2);
+    
+    if let Some(reqid) = rid {
+        reqid.to_string()
+    } else {
+        String::from("")
+    }
+}
+
 #[derive(Default,Debug)]
 pub struct RestMessage {
     method: String,

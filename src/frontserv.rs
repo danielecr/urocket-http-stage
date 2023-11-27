@@ -23,7 +23,7 @@
 use bytes::Bytes;
 //use axum::body::Bytes;
 //use axum::body::Full;
-use hyper::Error;
+use hyper::{Error, StatusCode};
 //use http_body_util::{Full, BodyExt};
 use http_body_util::{combinators::BoxBody, BodyExt, Empty, Full};
 
@@ -39,6 +39,7 @@ use hyper_util::rt::TokioIo;
 use std::future::Future;
 use std::net::SocketAddr;
 use std::pin::Pin;
+//use std::simd::SimdConstPtr;
 use std::sync::Mutex;
 
 use serde::{Deserialize, Serialize};
@@ -53,7 +54,8 @@ use std::{
 //use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 // use uuid::Uuid;
 
-use crate::arbiter::{ArbiterHandler, self};
+use crate::requestsvisor::RequestsVisorHandler;
+use crate::restmessage::RestMessage;
 
 /*
 tracing_subscriber::registry()
@@ -64,7 +66,7 @@ tracing_subscriber::registry()
 .with(tracing_subscriber::fmt::layer())
 .init();
 */
-pub async fn run_front(arbiter: &ArbiterHandler) {
+pub async fn run_front(arbiter: &RequestsVisorHandler) {
     // let db = Db::default();
     let addr: SocketAddr = ([0, 0, 0, 0], 8080).into();
 
@@ -84,6 +86,7 @@ pub async fn run_front(arbiter: &ArbiterHandler) {
                 )
                 .await
             {
+                // TODO: return a default 5xx message, anyway
                 println!("Failed to serve connection: {:?}", err);
             }
         });
@@ -92,64 +95,59 @@ pub async fn run_front(arbiter: &ArbiterHandler) {
 
 #[derive(Clone)]
 struct Svc<T> {
-    arbiter: T
+    vh: T
 }
 
 impl<T: Clone> Svc<T> {
-    fn new(arbiter:&T) -> Svc<T> {
-        Self { arbiter: arbiter.clone() }
+    fn new(vh:&T) -> Svc<T> {
+        Self { vh: vh.clone() }
     }
 }
 
-impl Service<Request<IncomingBody>> for Svc<ArbiterHandler> {
+impl Service<Request<IncomingBody>> for Svc<RequestsVisorHandler> {
     type Response = Response<Full<Bytes>>;
     type Error = hyper::Error;
     type Future = Pin<Box<dyn Future<Output = Result<Self::Response, Self::Error>> + Send>>;
 
     fn call(&self, req: Request<IncomingBody>) -> Self::Future {
-        let a = self.arbiter.clone();
+        let vh = self.vh.clone();
         Box::pin(async move {
             let uri = req.uri().clone();
             //println!("req: {:?}",req);
             //let bod = req.collect().await.unwrap().to_bytes();
             //println!("received {:?}", bod);
-            let frame_stream = req.into_body().map_frame(|frame| {
-                let frame = if let Ok(data) = frame.into_data() {
-                    data.iter()
-                        .map(|byte| byte.to_ascii_uppercase())
-                        .collect::<Bytes>()
-                } else {
-                    Bytes::new()
-                };
+            //println!("thats string {} for {}", astr, uri.path());
 
-                Frame::data(frame)
-            }).collect();
-            //let (parts, body) = req.into_parts();
-            //let body = serde_json::from_slice(&body).unwrap();
-            let bites =  frame_stream.await.unwrap().to_bytes();
-            //println!("received {:?}", bites);
-            let str = Vec::<u8>::from(bites.as_ref());
-            let astr = match std::str::from_utf8(&str) {
-                Ok(s) => s,
-                Err(e) => {eprintln!("err{}",e); ""}
+            let rmsg = RestMessage::parse_incoming(req).await;
+            let visormsg = vh.wait_for(rmsg);
+            let (rx, req_id) = match visormsg.await {
+                Ok((x, y)) => {
+                    (x,y)
+                }
+                Err(_) => {
+                    println!("Internal channel Error: something goes wrong for this request");
+                    // panic will return err in the tokio::spawn
+                    // see https://docs.rs/tokio/0.2.4/tokio/task/index.html
+                    panic!("RequestVisor channel error");
+                }
             };
-            println!("thats string {} for {}", astr, uri.path());
-
-            let (rx,req_id) = a.add_request();
             println!("I stored the reqid :: {}",&req_id);
             //let exresp  = rx.await;
             match rx.await {
                 Ok(exresp) => {
                     //serde_json::to_string(value)
-                    let response = serde_json::to_string(&exresp).unwrap();
-                    let a = Response::builder().status(200).body(Full::new(Bytes::from(response))).unwrap();
+                    let status = StatusCode::from_u16(exresp.code as u16).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
+                    let response = serde_json::to_string(&exresp.data).unwrap();
+                    let a = Response::builder().status(status).body(Full::new(Bytes::from(response))).unwrap();
+                    //hresp = Response::builder().body(a)
                     Ok(a)
                     //Ok(Response::builder().body(str).)
                     //let response = Response::new(str);
                     //let (mut parts, body) = response.into_parts();
                     //Ok(Response::from_parts(parts, body))
                 }
-                Err(e) => {
+                Err(_e) => {
+                    // this is the arbiter channel error, it should panic as well
                     let b = Response::builder().status(500).body(Full::new(Bytes::from(""))).unwrap();
                     Ok(b)
                 }
