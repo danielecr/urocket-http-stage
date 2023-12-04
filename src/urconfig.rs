@@ -33,5 +33,11 @@ impl URConfig {
     pub fn set_serviceconf(&mut self, serviceconf: ServiceConf) {
         self.serviceconf = Some(serviceconf);
     }
-
+    pub fn get_socket(&self) -> Option<&str> {
+        if let Some(conf) = &self.serviceconf {
+            Some(&conf.socketpath)
+        } else {
+            None
+        }
+    }
 }

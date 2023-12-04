@@ -1,6 +1,6 @@
 servicename: mynastyphpport
 port: 8080
-socketpath: /tmp/pathtokube.sock
+socketpath: /tmp/urocket.sock
 
 openapi: pets-oas.yaml
 
@@ -16,7 +16,6 @@ paths:
         channel: "cmdline"
         encoding: json
       logstdout: true
-      outtake: usocket://uri/{req_id}
       validate-out: false
 #    post:
 #      inject:
@@ -27,4 +26,3 @@ paths:
 #        encoding: json
 #        cmd: /usr/bin/echo
 #        channel: "cmdline"
-#      outtake: usocket://response/uri/{req_id}

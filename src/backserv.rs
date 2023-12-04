@@ -80,15 +80,23 @@ impl<T: Clone> Svc<T> {
     }
 }
 
-fn uri_extract_req_id(uri: &hyper::Uri) -> String {
+fn uri_extract_req_id(uri: &hyper::Uri) -> Option<String> {
+    if uri.path().starts_with("/urhttp/") {
+        Some(uri.path().replace("/urhttp/", ""))
+    } else {
+        println!("bad news: {} ", uri.path());
+        None
+    }
     // uri.path() is "/uri/{req_id}" -> ["","uri","{req_id}"]
-    let rid = uri.path().split("/").nth(2);
-    
+    //let rid = uri.path().replace("urhttp/","");
+    //rid
+    /*
     if let Some(reqid) = rid {
         reqid.to_string()
     } else {
         String::from("")
     }
+    */
 }
 
 async fn getpayload(req: Request<IncomingBody>) -> Result<serde_json::Value,serde_json::Error> {
@@ -125,36 +133,42 @@ impl Service<Request<IncomingBody>> for Svc<RequestsVisorHandler> {
         let vh = self.vh.clone();
         Box::pin(async move {
             let uri: hyper::Uri = req.uri().clone();
-            let req_id = uri_extract_req_id(&uri);
-            let message = match getpayload(req).await {
-                Ok(r) => {
-                    let payload = r;
-                    ForHttpResponse { code: 200, data: payload }
-                },
-                Err(e) => {
-                    eprintln!("error parsing backserv {}", e);
-                    let payload = serde_json::Value::Bool(false);
-                    ForHttpResponse { code: 500, data: payload }
+            match uri_extract_req_id(&uri) {
+                Some(req_id) => {
+                    let message = match getpayload(req).await {
+                        Ok(r) => {
+                            let payload = r;
+                            ForHttpResponse { code: 200, data: payload }
+                        },
+                        Err(e) => {
+                            eprintln!("error parsing backserv {}", e);
+                            let payload = serde_json::Value::Bool(false);
+                            ForHttpResponse { code: 500, data: payload }
+                        }
+                    };
+                    let resp = vh.push_fulfill(&req_id, message);
+                    //let bod = req.collect().await.unwrap().to_bytes();
+                    match resp.await {
+                        Ok(_exresp) => {
+                            //serde_json::to_string(value)
+                            let a = Response::builder().status(200).body(Full::new(Bytes::from("ok va bene\n"))).unwrap();
+                            Ok(a)
+                            //Ok(Response::builder().body(str).)
+                            //let response = Response::new(str);
+                            //let (mut parts, body) = response.into_parts();
+                            //Ok(Response::from_parts(parts, body))
+                        }
+                        Err(e) => {
+                            let b = Response::builder().status(500).body(Full::new(Bytes::from(""))).unwrap();
+                            Ok(b)
+                        }
+                    }
                 }
-            };
-            let resp = vh.push_fulfill(&req_id, message);
-            //let bod = req.collect().await.unwrap().to_bytes();
-            match resp.await {
-                Ok(exresp) => {
-                    //serde_json::to_string(value)
-                    let a = Response::builder().status(200).body(Full::new(Bytes::from("ok va bene\n"))).unwrap();
+                None => {
+                    let a = Response::builder().status(200).body(Full::new(Bytes::from("not handled\n"))).unwrap();
                     Ok(a)
-                    //Ok(Response::builder().body(str).)
-                    //let response = Response::new(str);
-                    //let (mut parts, body) = response.into_parts();
-                    //Ok(Response::from_parts(parts, body))
                 }
-                Err(e) => {
-                    let b = Response::builder().status(500).body(Full::new(Bytes::from(""))).unwrap();
-                    Ok(b)
-                }
-            }
-            
+            }            
         })
     }
 }

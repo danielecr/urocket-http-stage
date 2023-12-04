@@ -36,8 +36,8 @@ sequenceDiagram
 2. in `sh-serv` run `cargo run -c examples/urocket-service.yaml`
 3. in `sh-front` run `curl  -X POST localhost:8080/petss -H'Content-type: application/json'  -d'{"payload":"low"}'` (this shell is blocked)
 4. read the message in `sh-serv` shell, something like `I stored the reqid :: 64ed1763-9ca9-4b95-b47f-75c1318b3462`
-5. in `sh-back` shell run `curl -X POST --unix-socket /tmp/listenur.sock http://localhost/uri/something -H'Content-type: application/json' -d'{"hello":true}'` (and still the shell in `sh-front` is blocked)
-6. again in `sh-back` shell run `curl -X POST --unix-socket /tmp/listenur.sock http://localhost/uri/64ed1763-9ca9-4b95-b47f-75c1318b3462 -H'Content-type: application/json' -d'{"hello":true}'`
+5. in `sh-back` shell run `curl -X POST --unix-socket /tmp/listenur.sock http://internal/urhttp/something -H'Content-type: application/json' -d'{"hello":true}'` (and still the shell in `sh-front` is blocked)
+6. again in `sh-back` shell run `curl -X POST --unix-socket /tmp/listenur.sock http://internal/urhttp/64ed1763-9ca9-4b95-b47f-75c1318b3462 -H'Content-type: application/json' -d'{"hello":true}'`
 7. the shell in `sh-front` is unblocked, and it received the message `{"hello":true}`
 
 This code aims to handle req_id generation and matching, process spawn, timeout, exceptional case, logging, ... whatever is needed to make it stable enough to be used on production.
@@ -96,7 +96,6 @@ paths:
         channel: "cmdline"
         encoding: json
       logstdout: true
-      outtake: usocket://uri/{req_id}
       validate-out: false
 ```
 
@@ -163,7 +162,6 @@ paths:
       validate-in: false
       inject: {{ process-env }}
       logstdout: true | false
-      outtake: usocket://one/the/uuuid-123123-ggess-2123123
       validate-out: false
     post: ...
       in: {{ process-env }}
@@ -197,21 +195,22 @@ If "channel: cmdline" then payload is passed as escaped commandline argument, i.
 
 If "channel: stdin" then payload pass through the stdin
 
-### outtake
+### The backserv socket (was outtake)
 
-example:
+The socket filepath is defined in the configuration file
 
-```
-outtake: usocket://uri/{req_id}
-```
+Say we call the (optional) domain `internal` then options for curl is:
 
-it is a uri scheme, uscoket means the socketpath defined at top level,
+--unix-socket /tmp/urocket.sock http://internal/urhttp/{req_id}
+
 `{req_id}` must be replaced  with the matching request id, ie.:
 
-1. the process read ENV["REQUEST_ID] from environment
-2. the process write reply payload in usocket://uri/$ENV["REQUEST_ID]
+1. the process read `ENV["REQUEST_ID"]` from environment
+2. the process write reply payload in `http://internal/urhttp/$ENV["REQUEST_ID]`
 
-No others uri scheme are supported, service should refuse to start (if it starts with other schemes then it's a bug)
+This is a fixed uri matched.
+
+Note: backserv just remove `/urhttp/` and take the rest as req_id. (see todo)
 
 
 ## TODO

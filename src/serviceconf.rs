@@ -25,8 +25,7 @@ pub struct VerbAction {
     #[serde(default)]
     pub validatein: bool,
     #[serde(default)]
-    pub inject: Option<ProcEnv>,
-    pub outtake: String
+    pub inject: Option<ProcEnv>
 }
 
 #[derive(Serialize,Deserialize,Debug)]
@@ -85,8 +84,5 @@ impl ServiceConf {
                 panic!("\nPANIC Error reading configuration \n\nfile:{} > {e}\n", configfilename);
             }
         }
-    }
-    pub fn get_socket(&self) -> &str {
-        &self.socketpath
     }
 }
