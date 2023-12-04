@@ -30,9 +30,9 @@ sequenceDiagram
 2. in `sh-serv` run `cargo run -c examples/urocket-service.yaml`
 3. in `sh-front` run `curl  -X POST localhost:8080/petss -H'Content-type: application/json'  -d'{"payload":"low"}'` (this shell is blocked)
 4. read the message in `sh-serv` shell, something like `I stored the reqid :: 64ed1763-9ca9-4b95-b47f-75c1318b3462`
-5. in `sh-back` shell run `curl -X POST --unix-socket /tmp/listenur.sock http://localhost/uri/something -H'Content-type: application/json' -d'{"hello":true}'` (and still the shell in `sh-serv` is blocked)
+5. in `sh-back` shell run `curl -X POST --unix-socket /tmp/listenur.sock http://localhost/uri/something -H'Content-type: application/json' -d'{"hello":true}'` (and still the shell in `sh-front` is blocked)
 6. again in `sh-back` shell run `curl -X POST --unix-socket /tmp/listenur.sock http://localhost/uri/64ed1763-9ca9-4b95-b47f-75c1318b3462 -H'Content-type: application/json' -d'{"hello":true}'`
-7. the shell in `sh-serv` is unblocked, and it received the message `{"hello":true}`
+7. the shell in `sh-front` is unblocked, and it received the message `{"hello":true}`
 
 This code aims to handle req_id generation and matching, process spawn, timeout, exceptional case, logging, ... whatever is needed to make it stable enough to be used on production.
 
