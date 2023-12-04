@@ -208,6 +208,8 @@ This project is on POC stage. What is in **already**:
 * frontserv::run_front() listen on port 8080 and use arbiter to store req_id
 * backserv::run_backserv() listen on socket file and use arbiter to match and dispatch message to frontserv request waiting on channel.
 
+Maybe: use swagger crate, https://crates.io/crates/swagger
+
 **TODOs**:
 
 - ~~RequestVisor use Arbiter and replace it in frontserv/backserv~~
@@ -269,3 +271,6 @@ by Kubernetes, and configured with cgroups v2 (hierarchical)
 
 And simpler is better, but a kind of ProcessDriver should be writed ad hoc, that plugs
 well in tokio async.
+
+
+https://docs.rs/cgroups-rs/0.3.4/cgroups_rs/cgroup_builder/index.html
