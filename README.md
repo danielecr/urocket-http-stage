@@ -7,6 +7,12 @@ Splitting the above sentence:
 - (*not provided*!) an executable that: 1. accept a json payload, 2. write something in a unix socket (a file)
 - an http service listening on the unix socket and match the req_id and send back to the caller
 
+Why not just nginx? This example should become a crate, a library that can be used together with other
+crate, maybe consuming messages from a message broker, in a number of way.
+
+The plan is to provides a number of way to re-use existing code, but over a stable async green
+thread model: so more urocket-xyz-stage(s).
+
 ```mermaid
 sequenceDiagram
     Participant C as Client
@@ -40,7 +46,7 @@ The name urocket-stage-http. During the launch of a rocket on the space, at some
 split in 2 parts and the first stage is missed. This happens when the rocket is on the cloud.
 I would call this "usefull rocket stage".
 
-Nothing to do with rust rocket, in fact the code use hyper because it needs minimal staff.
+Nothing to do with rust rocket, in fact the code use hyper since it needs minimal staff.
 
 Openapi reference:
 - https://swagger.io/specification/
