@@ -48,7 +48,7 @@ pub async fn run_backserv(socketpath: &str, arbiter: &RequestsVisorHandler) {
     }
 
     let listener = UnixListener::bind(path).unwrap();
-
+    println!("Backservice listening on unix:///{}", socketpath);
     //let listener = TcpListener::bind(addr).await.unwrap();
     loop {
         let (stream, _) = listener.accept().await.unwrap();

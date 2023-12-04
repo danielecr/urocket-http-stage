@@ -3,6 +3,7 @@ name = "urocket-http-stage"
 author= "Daniele Cruciani <daniele@smartango.com>"
 version = "0.1.0"
 edition = "2021"
+default-run = "main"
 
 [dependencies]
 serde = { version = "1.0", features = ["derive"] }

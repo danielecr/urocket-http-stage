@@ -56,7 +56,13 @@ pub struct ServiceConf {
 
 async fn read_conf_file(conf_file: &str) -> String {
     // TODO: handle error!!
-    let mut f = File::open(conf_file).await.unwrap();
+    let mut f = match File::open(conf_file).await {
+        Ok(f) => f,
+        Err(e) => {
+            panic!("conf file error {:?} while trying to open file :\"{}\"\n\tMissing -c [filename] ??", e, conf_file);
+        }
+    };
+    
     let mut buffer = Vec::new();
     f.read_to_end(&mut buffer).await.unwrap();
     match String::from_utf8(buffer) {
@@ -79,5 +85,8 @@ impl ServiceConf {
                 panic!("\nPANIC Error reading configuration \n\nfile:{} > {e}\n", configfilename);
             }
         }
+    }
+    pub fn get_socket(&self) -> &str {
+        &self.socketpath
     }
 }

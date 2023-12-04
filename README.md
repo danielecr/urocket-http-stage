@@ -24,6 +24,16 @@ sequenceDiagram
     Note left of C: Our client is happy now
 ```
 
+**Quick example**:
+
+1. Open 3 command line shell: `sh-serv`, `sh-front`, `sh-back`
+2. in `sh-serv` run `cargo run -c examples/urocket-service.yaml`
+3. in `sh-front` run `curl  -X POST localhost:8080/petss -H'Content-type: application/json'  -d'{"payload":"low"}'` (this shell is blocked)
+4. read the message in `sh-serv` shell, something like `I stored the reqid :: 64ed1763-9ca9-4b95-b47f-75c1318b3462`
+5. in `sh-back` shell run `curl -X POST --unix-socket /tmp/listenur.sock http://localhost/uri/something -H'Content-type: application/json' -d'{"hello":true}'` (and still the shell in `sh-serv` is blocked)
+6. again in `sh-back` shell run `curl -X POST --unix-socket /tmp/listenur.sock http://localhost/uri/64ed1763-9ca9-4b95-b47f-75c1318b3462 -H'Content-type: application/json' -d'{"hello":true}'`
+7. the shell in `sh-serv` is unblocked, and it received the message `{"hello":true}`
+
 This code aims to handle req_id generation and matching, process spawn, timeout, exceptional case, logging, ... whatever is needed to make it stable enough to be used on production.
 
 The name urocket-stage-http. During the launch of a rocket on the space, at some point the rocket

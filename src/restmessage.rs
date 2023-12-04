@@ -14,6 +14,7 @@ fn uri_extract_req_id(uri: hyper::Uri) -> String {
     }
 }
 
+/// Structure to keep the incoming request from frontserv
 #[derive(Default,Debug)]
 pub struct RestMessage {
     method: String,
@@ -24,6 +25,7 @@ impl RestMessage {
     pub fn new(m:&str, u:&str, d:&str) ->Self {
         Self {method: m.to_string(), uri: u.to_string(), data: d.to_string()}
     }
+    /// Create a new RestMessage from the Request payload
     pub async fn parse_incoming(req: hyper::Request<IncomingBody>) -> Self {
         let method = req.method().to_string();
         let uri = req.uri().path().to_string();
