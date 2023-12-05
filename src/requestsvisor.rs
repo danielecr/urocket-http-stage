@@ -1,8 +1,8 @@
-use tokio::sync::{mpsc, oneshot::{self, Receiver, Sender}};
+use tokio::sync::{mpsc, oneshot::{Receiver, Sender, self}};
 
 extern crate toktor;
 use toktor::actor_handler;
-use crate::{toktor_send, arbiter::ForHttpResponse};
+use crate::{toktor_send, arbiter::ForHttpResponse, arbiter::FrontResponse, serviceconf::ServiceConf};
 
 use crate::arbiter::ArbiterHandler;
 
@@ -12,7 +12,7 @@ pub enum ReqVisorMsg {
     RegisterPending {
         //req: Request<IncomingBody>,
         req: RestMessage,
-        respond_to: Sender<(Receiver<ForHttpResponse>,String)>
+        respond_to: Sender<(Receiver<FrontResponse>,String)>
     },
     FulfillPending {
         req_id: String,
@@ -21,16 +21,19 @@ pub enum ReqVisorMsg {
     }
 }
 
-pub struct RequestsVisor {
+pub struct RequestsVisorActor {
     receiver: mpsc::Receiver<ReqVisorMsg>,
-    arbiter: ArbiterHandler
+    arbiter: ArbiterHandler,
+    config: ServiceConf
 }
 
-impl RequestsVisor {
-    pub fn new(receiver: mpsc::Receiver<ReqVisorMsg>, arbiter: &ArbiterHandler) -> Self {
-        RequestsVisor {
+impl RequestsVisorActor {
+    pub fn new(receiver: mpsc::Receiver<ReqVisorMsg>, arbiter: &ArbiterHandler, conf: &ServiceConf) -> Self {
+        //println!("REQUEST ACTOR:: {:?}",conf);
+        RequestsVisorActor {
             receiver,
-            arbiter: arbiter.clone()
+            arbiter: arbiter.clone(),
+            config: conf.clone()
         }
     }
 
@@ -44,9 +47,23 @@ impl RequestsVisor {
         match msg {
             ReqVisorMsg::RegisterPending { req, respond_to: tx } => {
                 let arb = self.arbiter.clone();
+                let config = self.config.clone();
                 tokio::spawn(async move {
-                    let (rx, uuid) = arb.add_request();
-                    let _ = tx.send((rx,uuid));
+                    match config.match_request(&req) {
+                        Some(va) => {
+                            let (rx, uuid) = arb.add_request();
+                            let _ = tx.send((rx,uuid));
+                            println!("Do something {:?}", va.inject)
+                        },
+                        None => {
+                            println!("RequestVisor: leider it does not match any executor");
+                            // so return something like code 500 to the caller.
+                            let (tx2, rx ) = oneshot::channel();
+                            let _ = tx2.send(FrontResponse::InternalError);
+                            let _ = tx.send((rx,String::from("")));
+                        }
+                    };
+
                     // here spawn the process that will eventually fulfill the request!
                     // the process is spawned based on RestMessage and configuration
                     // based on configuration, the events of: exit bad, timeout, etc.
@@ -59,15 +76,11 @@ impl RequestsVisor {
                 let arb = self.arbiter.clone();
                 tokio::spawn(async move {
                     let mypush = arb.fulfill_request(&req_id, response).await;
-                    match mypush {
-                        Ok(rec) => {
-                            match rec.await {
-                                Ok(x) => respond_to.send(Ok(x)),
-                                Err(_) => respond_to.send(Ok(false))
-                            }
-                        },
-                        Err(_x) => {
-                            respond_to.send(Ok(false))
+                    match mypush.await {
+                        Ok(matched) => respond_to.send(Ok(matched)),
+                        Err(e) => {
+                            eprintln!("channel error: {:?}",e);
+                            respond_to.send(Err(()))
                         }
                     }
                     //respond_to.send(Ok(true));
@@ -77,7 +90,7 @@ impl RequestsVisor {
     }
 }
 
-actor_handler!({arbiter: &ArbiterHandler} => RequestsVisor, RequestsVisorHandler, ReqVisorMsg);
+actor_handler!({arbiter: &ArbiterHandler, conf: &ServiceConf} => RequestsVisorActor, RequestsVisor, ReqVisorMsg);
 
 
 pub struct ErrorBack {
@@ -89,8 +102,8 @@ impl std::fmt::Display for ErrorBack {
     }
 }
 
-impl RequestsVisorHandler {
-    pub fn wait_for(&self, req: RestMessage) -> Receiver<(Receiver<ForHttpResponse>,String)> {
+impl RequestsVisor {
+    pub fn wait_for(&self, req: RestMessage) -> Receiver<(Receiver<FrontResponse>,String)> {
         //let arbiter = self.arbiter.clone();
         let (tx, rx) = tokio::sync::oneshot::channel();
         let msg = ReqVisorMsg::RegisterPending {
@@ -116,8 +129,8 @@ impl RequestsVisorHandler {
             _ => println!()
         };
         match rx2.await {
-            Ok(data) => {
-                Ok(true)
+            Ok(result) => {
+                result.map_err(|_|{ErrorBack{}})
             }
             Err(_e) => {
                 Err(ErrorBack {  })
@@ -136,7 +149,8 @@ mod tests {
     #[tokio::test]
     async fn visor_run() {
         let arbiter = toktor_new!(ArbiterHandler);
-        let visor = toktor_new!(RequestsVisorHandler, &arbiter);
+        let conf = ServiceConf::default();
+        let visor = toktor_new!(RequestsVisor, &arbiter, &conf);
         let req = RestMessage::new("get", "/myurl", "");
         let rx = visor.wait_for(req);
         let (x, uuid) =  rx.await.unwrap();
@@ -147,16 +161,25 @@ mod tests {
                 println!("VISOR all fine good {}",d);
             },
             Err(e) => {
-                println!("error {}",e);
+                println!("VISOR error {}",e);
             }
         }
         match x.await {
-            Ok(reason) => {
-                println!("VISOR there are no reasons: {:?}", reason);
+            Ok(message_back) => {
+                match message_back {
+                    FrontResponse::BackMsg(mb) => {
+                        println!("VISOR caller finally got the message to send back: {:?}", mb);
+                    },
+                    FrontResponse::InternalError => {
+                        eprintln!("Internal error");
+                        //assert_eq!(false, true);
+                    }
+                }
             },
             Err(e) => {
-                println!("there are no error: {:?}",e);
+                println!("VISOR caller received the channel error: {:?}",e);
             }
         }
-}
+        tokio::time::sleep(tokio::time::Duration::from_millis(400)).await;
+    }
 }

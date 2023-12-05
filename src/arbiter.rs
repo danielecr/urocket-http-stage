@@ -23,11 +23,18 @@ pub struct ForHttpResponse {
     pub data: serde_json::Value,
 }
 
+pub enum FrontResponse {
+    BackMsg(ForHttpResponse),
+    InternalError,
+}
+
+/// ProxyMsg
+/// !!!TODO separate Subscriber from Fulfiller, also timeout is handled somewhere else
 pub enum ProxyMsg {
     AddSubscriber {
         request_id: String,
         timeout: u64,
-        respond_to: oneshot::Sender<ForHttpResponse>
+        respond_to: oneshot::Sender<FrontResponse>
     },
     FulfillRequest {
         request_id: String,
@@ -36,6 +43,9 @@ pub enum ProxyMsg {
     }
 }
 
+/// Arbiter
+/// Does not it sound weird that it is storing the ProxyMsg::FulfillRequest's as well?
+/// !!!TODO: review this
 pub struct Arbiter {
     receiver: mpsc::Receiver<ProxyMsg>,
     subscriptions: Arc<TMutex<HashMap<String,ProxyMsg>>>,
@@ -56,15 +66,13 @@ impl Arbiter {
     fn handle_message(&mut self, msg: ProxyMsg) {
         match msg {
             ProxyMsg::AddSubscriber { request_id, timeout, respond_to } => {
-                {
-                    let tx = respond_to;
-                    let subscriptions = self.subscriptions.clone();
-                    tokio::spawn(async move {
-                        let mut subscrs = subscriptions.lock().await;
-                        (*subscrs).insert(request_id.clone(), ProxyMsg::AddSubscriber { request_id: request_id, timeout, respond_to: tx });
-                        drop(subscrs);
-                    });
-                }
+                let tx = respond_to;
+                let subscriptions = self.subscriptions.clone();
+                tokio::spawn(async move {
+                    let mut subscrs = subscriptions.lock().await;
+                    (*subscrs).insert(request_id.clone(), ProxyMsg::AddSubscriber { request_id: request_id, timeout, respond_to: tx });
+                    drop(subscrs);
+                });
             },
             ProxyMsg::FulfillRequest { request_id, response_payload, respond_to } => {
                 let subscriptions = self.subscriptions.clone();
@@ -75,12 +83,20 @@ impl Arbiter {
                     if let Some(m) = subscrs.remove(&request_id) {
                         match m {
                             ProxyMsg::AddSubscriber { request_id: _, timeout: _, respond_to: tx } => {
-                                let _ = tx.send(response_payload);
+                                let _ = tx.send(FrontResponse::BackMsg(response_payload));
                                 let _ = respond_to.send(true);
                             },
-                            _ => {}
+                            _ => {
+                                // Literally impossible: ProxyMsg::FulfillRequest is never inserted
+                            }
                         };
-                    };
+                    } else {
+                        // !!!TODO:
+                        // 1. something else replied 
+                        // 2. receiving a message not belonging to arbiter
+                        // in any case log the message
+                        let _ = respond_to.send(false);
+                    }
                 });
             }
         };
@@ -91,59 +107,37 @@ actor_handler!({} => Arbiter, ArbiterHandler, ProxyMsg);
 
 use crate::toktor_send;
 
-/*
-
-type AddFutureType = std::pin::Pin<Box<dyn std::future::Future<Output = Receiver<ForHttpResponse>> + Send> >;
-type FulFillFutureType = std::pin::Pin<Box<dyn std::future::Future<Output = Result<Receiver<bool>,()>> + Send>>;
-trait ProxyArbiter {
-    //type Response = Receiver<ForHttpResponse>;
-    //type Future = std::pin::Pin<Box<dyn std::future::Future<Output = Self::Response> + Send> >;
-    //fn add_request(&self) -> Future;
-    //// Pin<Box<dyn Future<Output = Receiver<ForHttpResponse>> + Send> >
-    fn add_request(&self) -> std::pin::Pin<Box<dyn std::future::Future<Output = Receiver<ForHttpResponse>> + Send> >;
-    fn fulfill_request(&self, request_id: &str, payload: ForHttpResponse) -> FulFillFutureType;
-}
-*/
-
 impl ArbiterHandler {
-    //type Response = Receiver<ForHttpResponse>;
-    //type Future = std::pin::Pin<Box<dyn std::future::Future<Output = Self::Response> + Send> >;
-    pub fn add_request(&self) -> (Receiver<ForHttpResponse>, String) {
-    //fn add_request(&self) -> AddFutureType {
-        //Box::pin(async {
-            let (tx, rx) = tokio::sync::oneshot::channel();
-            let unique: String = uuid::Uuid::new_v4().to_string();
-            let msg_sub = ProxyMsg::AddSubscriber {
-                request_id: unique.clone(),
-                timeout: 40000,
-                respond_to: tx
+    pub fn add_request(&self) -> (Receiver<FrontResponse>, String) {
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        let unique: String = uuid::Uuid::new_v4().to_string();
+        let msg_sub = ProxyMsg::AddSubscriber {
+            request_id: unique.clone(),
+            timeout: 40000,
+            respond_to: tx
+        };
+        let s = self.clone();
+        tokio::spawn(async move{
+            match toktor_send!(s, msg_sub).await {
+                _ => {}//println!("anyway")
             };
-            let s = self.clone();
-            tokio::spawn(async move{
-                match toktor_send!(s, msg_sub).await {
-                    _ => {}//println!("anyway")
-                };
-            });
-            (rx,unique)
-        //})
+        });
+        (rx,unique)
     }
-
-    pub async fn fulfill_request(&self, request_id: &str, payload: ForHttpResponse) -> Result<Receiver<bool>,()> {
-    //fn fulfill_request(&self, request_id: &str, payload: ForHttpResponse) -> FulFillFutureType {
-        //Box::pin(async {
-            
-            let (tx2, rx2) = tokio::sync::oneshot::channel();
-            let msg_ff = ProxyMsg::FulfillRequest {
-                request_id: request_id.to_string(),
-                response_payload: payload,
-                respond_to: tx2
-            };
-            
-            match toktor_send!(self, msg_ff).await {
-                _ => println!("sent the ff message")
-            };
-            Ok(rx2)
-        //})
+    
+    pub async fn fulfill_request(&self, request_id: &str, payload: ForHttpResponse) -> Receiver<bool> {
+        
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        let msg_ff = ProxyMsg::FulfillRequest {
+            request_id: request_id.to_string(),
+            response_payload: payload,
+            respond_to: tx
+        };
+        
+        match toktor_send!(self, msg_ff).await {
+            _ => println!("sent the ff message")
+        };
+        rx
     }
 }
 
@@ -151,19 +145,27 @@ impl ArbiterHandler {
 mod tests {
     use crate::toktor_new;
     use super::*;
-
+    
     #[tokio::test]
     async fn arbiter_run() {
         let arbiter = toktor_new!(ArbiterHandler);
         let (rx, req_id) = arbiter.add_request();
         tokio::time::sleep(std::time::Duration::from_millis(500)).await;
         let rpay = ForHttpResponse::default();
-        let rx2  = arbiter.fulfill_request(&req_id.clone(), rpay.clone()).await.unwrap();
+        let rx2  = arbiter.fulfill_request(&req_id.clone(), rpay.clone()).await;
         // should arrive rx: delivering payload rpay
         match rx.await {
             Ok(m) => {
-                println!("payload to give back: {:?}",m.clone());
-                assert_eq!(m.clone(),rpay);
+                match m {
+                    FrontResponse::BackMsg(m)=> {
+                        println!("payload to give back: {:?}",m.clone());
+                        assert_eq!(m.clone(),rpay);
+                    },
+                    FrontResponse::InternalError => {
+                        eprintln!("Internal error (unspecified)");
+                        assert_eq!(false, true);
+                    }
+                }
             },
             Err(e) => panic!("er {:?}",e)
         };

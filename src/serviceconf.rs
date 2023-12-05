@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 
+use hyper::Method;
 /// ServiceConf - reppresent the file servicedef.yaml as the configuration of the service
 /// it includes all service configuration: register-notiservice.notitypes is a map
 /// between notification type name and the notification type definition
@@ -11,7 +12,9 @@ use tokio::fs::File;
 use tokio::io::AsyncReadExt;
 use serde::{Deserialize, Serialize};
 
-#[derive(Serialize,Deserialize,Debug)]
+use crate::restmessage::RestMessage;
+
+#[derive(Serialize,Deserialize,Debug,Clone)]
 pub struct ProcEnv {
     pub wd: String,
     pub env: Vec<String>,
@@ -20,18 +23,21 @@ pub struct ProcEnv {
     pub channel: String
 }
 
-#[derive(Serialize,Deserialize,Debug,Default)]
+#[derive(Serialize,Deserialize,Debug,Default,Clone)]
 pub struct VerbAction {
     #[serde(default)]
     pub validatein: bool,
     #[serde(default)]
+    pub validateout: bool,
+    #[serde(default)]
+    pub logstdout: bool,
     pub inject: Option<ProcEnv>
 }
 
-#[derive(Serialize,Deserialize,Debug)]
+#[derive(Serialize,Deserialize,Debug,Clone)]
 pub struct PathVerb {
-    get: VerbAction,
-    post: Option<VerbAction>,
+    pub get: Option<VerbAction>,
+    pub post: Option<VerbAction>,
 //    #[serde(rename="post")]
 //    Post{ validate_in: bool,
 //        inject: ProcEnv },
@@ -44,7 +50,7 @@ pub struct PathVerbT {
     get: VerbAction
 }
 
-#[derive(Deserialize,Debug)]
+#[derive(Deserialize,Debug,Clone,Default)]
 pub struct ServiceConf {
     pub servicename: String,
     pub socketpath: String,
@@ -84,5 +90,23 @@ impl ServiceConf {
                 panic!("\nPANIC Error reading configuration \n\nfile:{} > {e}\n", configfilename);
             }
         }
+    }
+    pub fn match_request(&self, rm: &RestMessage) -> Option<VerbAction> {
+        if let Some(pv) = self.paths.get(rm.uri()) {
+            let method = rm.method();
+            match method {
+                &Method::GET => {
+                    pv.get.clone()
+                }
+                &Method::POST => {
+                    pv.post.clone()
+                },
+                _ => None
+            }
+        } else {
+            None
+        }
+        //None
+        //rm.uri()
     }
 }

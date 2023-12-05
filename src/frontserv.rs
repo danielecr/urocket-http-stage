@@ -54,7 +54,8 @@ use std::{
 //use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 // use uuid::Uuid;
 
-use crate::requestsvisor::RequestsVisorHandler;
+use crate::arbiter::FrontResponse;
+use crate::requestsvisor::RequestsVisor;
 use crate::restmessage::RestMessage;
 
 /*
@@ -66,7 +67,7 @@ tracing_subscriber::registry()
 .with(tracing_subscriber::fmt::layer())
 .init();
 */
-pub async fn run_front(arbiter: &RequestsVisorHandler) {
+pub async fn run_front(arbiter: &RequestsVisor) {
     // let db = Db::default();
     let addr: SocketAddr = ([0, 0, 0, 0], 8080).into();
 
@@ -104,7 +105,7 @@ impl<T: Clone> Svc<T> {
     }
 }
 
-impl Service<Request<IncomingBody>> for Svc<RequestsVisorHandler> {
+impl Service<Request<IncomingBody>> for Svc<RequestsVisor> {
     type Response = Response<Full<Bytes>>;
     type Error = hyper::Error;
     type Future = Pin<Box<dyn Future<Output = Result<Self::Response, Self::Error>> + Send>>;
@@ -134,13 +135,24 @@ impl Service<Request<IncomingBody>> for Svc<RequestsVisorHandler> {
             println!("I stored the reqid :: {}",&req_id);
             //let exresp  = rx.await;
             match rx.await {
-                Ok(exresp) => {
-                    //serde_json::to_string(value)
-                    let status = StatusCode::from_u16(exresp.code as u16).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
-                    let response = serde_json::to_string(&exresp.data).unwrap();
-                    let a = Response::builder().status(status).body(Full::new(Bytes::from(response))).unwrap();
-                    //hresp = Response::builder().body(a)
-                    Ok(a)
+                Ok(x) => {
+                    match x {
+                        FrontResponse::BackMsg(exresp) => {
+                            //serde_json::to_string(value)
+                            let status = StatusCode::from_u16(exresp.code as u16).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
+                            let response = serde_json::to_string(&exresp.data).unwrap();
+                            let a = Response::builder().status(status).body(Full::new(Bytes::from(response))).unwrap();
+                            //hresp = Response::builder().body(a)
+                            Ok(a)
+                        }
+                        FrontResponse::InternalError => {
+                            let status = StatusCode::from_u16(500).unwrap();
+                            let response = Bytes::from("Internal Error");
+                            let a = Response::builder().status(status).body(Full::new(response)).unwrap();
+                            //hresp = Response::builder().body(a)
+                            Ok(a)
+                        }
+                    }
                     //Ok(Response::builder().body(str).)
                     //let response = Response::new(str);
                     //let (mut parts, body) = response.into_parts();

@@ -47,15 +47,15 @@ struct ProcessInfos {
     uuid: String
 }
 
-struct ProcessController {
+struct ProcessControllerActor {
     receiver: mpsc::Receiver<ProcMsg>,
     arbiter: ArbiterHandler,
     proc_infos: Arc<TMutex<HashMap<String,ProcessInfos>>>,
 }
 
-impl ProcessController {
-    pub fn new(receiver: mpsc::Receiver<ProcMsg>, arbiter: &ArbiterHandler, config: &ServiceConf) -> Self {
-        ProcessController {
+impl ProcessControllerActor {
+    pub fn new(receiver: mpsc::Receiver<ProcMsg>, arbiter: &ArbiterHandler) -> Self {
+        ProcessControllerActor {
                 receiver,
                 arbiter: arbiter.clone(),
                 proc_infos: Arc::new(TMutex::new(HashMap::new()))
@@ -104,13 +104,30 @@ impl ProcessController {
     }
 }
 
-actor_handler!({arbiter: &ArbiterHandler, config: &ServiceConf} => ProcessController, ProcessControllerHandler, ProcMsg);
+actor_handler!({arbiter: &ArbiterHandler} => ProcessControllerActor, ProcessController, ProcMsg);
 
-impl ProcessControllerHandler {
+impl ProcessController {
     pub async fn run_back_process(&self, req: RestMessage, uuid: &str) -> () {
         let msg = ProcMsg::newproc(req,uuid);
         match toktor_send!(self,msg).await {
             _ => {}
         };
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::toktor_new;
+    use super::*;
+    
+    #[tokio::test]
+    async fn run_process_controller() {
+        let arbiter = toktor_new!(ArbiterHandler);
+        let proco = toktor_new!(ProcessController, &arbiter);
+        let req = RestMessage::new("POST", "/put/staff/in", "true");
+        proco.run_back_process(req, "123123123123").await;
+        println!("now await ...");
+        tokio::time::sleep(tokio::time::Duration::from_millis(2000)).await;
+        println!("the time is over");
     }
 }

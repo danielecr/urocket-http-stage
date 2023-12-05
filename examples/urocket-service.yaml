@@ -6,7 +6,7 @@ openapi: pets-oas.yaml
 
 paths:
   /get/pets:
-    get:
+    post:
       validatein: false
       inject:
         wd: /home/daniele/Development
@@ -16,7 +16,7 @@ paths:
         channel: "cmdline"
         encoding: json
       logstdout: true
-      validate-out: false
+      validateout: false
 #    post:
 #      inject:
 #        wd: /home/daniele/Documenti

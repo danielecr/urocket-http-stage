@@ -17,7 +17,7 @@ macro_rules! toktor_send {
 
 #[macro_export]
 macro_rules! toktor_new {
-    ($actorhand:ident, $($x:expr)* ) => {
+    ($actorhand:ident, $($x:expr),* ) => {
         {
             $actorhand::new($($x),*)
         }

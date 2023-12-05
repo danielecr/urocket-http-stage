@@ -31,16 +31,14 @@ use hyper::service::{Service, service_fn};
 use hyper::{body::Incoming as IncomingBody, Request, Response};
 use tokio::net::{TcpListener,UnixListener};
 use hyper_util::rt::TokioIo;
-use tokio::task::JoinError;
 
 use std::future::Future;
 use std::pin::Pin;
 
-use crate::arbiter::{ArbiterHandler, ForHttpResponse};
-use crate::requestsvisor::RequestsVisorHandler;
-use crate::restmessage::{self, RestMessage};
+use crate::arbiter::ForHttpResponse;
+use crate::requestsvisor::RequestsVisor;
 
-pub async fn run_backserv(socketpath: &str, arbiter: &RequestsVisorHandler) {
+pub async fn run_backserv(socketpath: &str, rv: &RequestsVisor) {
     let path = std::path::Path::new(socketpath);
 
     if path.exists() {
@@ -54,7 +52,7 @@ pub async fn run_backserv(socketpath: &str, arbiter: &RequestsVisorHandler) {
         let (stream, _) = listener.accept().await.unwrap();
         let io = TokioIo::new(stream);
         
-        let svc = Svc::new(arbiter);
+        let svc = Svc::new(rv);
         tokio::task::spawn(async move {
             if let Err(err) = // http1::Builder::new()
             http1::Builder::new().serve_connection(
@@ -71,12 +69,12 @@ pub async fn run_backserv(socketpath: &str, arbiter: &RequestsVisorHandler) {
 
 #[derive(Clone)]
 struct Svc<T> {
-    vh: T
+    rv: T
 }
 
 impl<T: Clone> Svc<T> {
-    fn new(vh:&T) -> Svc<T> {
-        Self { vh: vh.clone() }
+    fn new(rv:&T) -> Svc<T> {
+        Self { rv: rv.clone() }
     }
 }
 
@@ -124,13 +122,13 @@ async fn getpayload(req: Request<IncomingBody>) -> Result<serde_json::Value,serd
     serde_json::from_slice(&str)
 }
 
-impl Service<Request<IncomingBody>> for Svc<RequestsVisorHandler> {
+impl Service<Request<IncomingBody>> for Svc<RequestsVisor> {
     type Response = Response<Full<Bytes>>;
     type Error = hyper::Error;
     type Future = Pin<Box<dyn Future<Output = Result<Self::Response, Self::Error>> + Send>>;
 
     fn call(&self, req: Request<IncomingBody>) -> Self::Future {
-        let vh = self.vh.clone();
+        let vh = self.rv.clone();
         Box::pin(async move {
             let uri: hyper::Uri = req.uri().clone();
             match uri_extract_req_id(&uri) {
@@ -149,9 +147,14 @@ impl Service<Request<IncomingBody>> for Svc<RequestsVisorHandler> {
                     let resp = vh.push_fulfill(&req_id, message);
                     //let bod = req.collect().await.unwrap().to_bytes();
                     match resp.await {
-                        Ok(_exresp) => {
+                        Ok(exresp) => {
                             //serde_json::to_string(value)
-                            let a = Response::builder().status(200).body(Full::new(Bytes::from("ok va bene\n"))).unwrap();
+                            let message = if exresp {
+                                Bytes::from("ok va bene\n")
+                            } else {
+                                Bytes::from("Does not match any response\n")
+                            };
+                            let a = Response::builder().status(200).body(Full::new(message)).unwrap();
                             Ok(a)
                             //Ok(Response::builder().body(str).)
                             //let response = Response::new(str);
