@@ -2,6 +2,7 @@
 use urocket_http_stage::cmdlineparser::parse;
 //use urocket_http_stage::serviceconf::ServiceConf;
 
+use urocket_http_stage::processcontroller::ProcessController;
 use urocket_http_stage::serviceconf::ServiceConf;
 use urocket_http_stage::toktor_new;
 
@@ -26,7 +27,8 @@ async fn main() -> Result<(),()> {
     let conf = config.clone_paths();
 
     let arbiter = toktor_new!(ArbiterHandler);
-    let requests_visor = toktor_new!(RequestsVisor, &arbiter, &conf);
+    let pctl = toktor_new!(ProcessController, &arbiter);
+    let requests_visor = toktor_new!(RequestsVisor, &arbiter, &pctl, &conf);
     let rv = requests_visor.clone();
     tokio::spawn(async move {
         run_front(&rv).await;

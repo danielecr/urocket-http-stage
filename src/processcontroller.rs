@@ -20,13 +20,14 @@
 use std::sync::Arc;
 use tokio::sync::{Mutex as TMutex, mpsc, oneshot};
 use std::collections::HashMap;
-use crate::{arbiter::ArbiterHandler, serviceconf::ServiceConf, restmessage::{RestMessage, self}};
+use crate::{arbiter::ArbiterHandler, serviceconf::{self, ProcEnv}, restmessage::RestMessage};
 extern crate toktor;
 use toktor::actor_handler;
 use crate::toktor_send;
 
 enum ProcMsg {
     AddProc {
+        proce: ProcEnv,
         rest_message: RestMessage,
         uuid: String
     },
@@ -34,8 +35,9 @@ enum ProcMsg {
 }
 
 impl ProcMsg {
-    fn newproc(restmessage: RestMessage, uuid: &str) -> Self {
+    fn newproc(proce: &ProcEnv, restmessage: RestMessage, uuid: &str) -> Self {
         ProcMsg::AddProc {
+            proce: proce.clone(),
             rest_message: restmessage,
             uuid: uuid.to_string()
         }
@@ -70,19 +72,26 @@ impl ProcessControllerActor {
 
     fn handle_message(&mut self, msg: ProcMsg) {
         match msg {
-            ProcMsg::AddProc { rest_message, uuid } => {
+            ProcMsg::AddProc { proce, rest_message, uuid } => {
                 // TODO:
                 // 1. match the rest_message with config
                 // 2. create a process compatible
                 // 3. store the process in a proclist for timeout
                 // do some thing based on config
-                tokio::spawn(async {
+                tokio::spawn(async move {
                     //let str = "ciao".to_string();
                     //let v8 = Vec::<u8>::from(str);
-                    let a = tokio::process::Command::new("echo")
-                    .arg("test.php")
-                    .arg(" world")
-                    .output();
+                    let cmd_and_args = proce.cmd_to_arr_replace("{{jsonpayload}}", rest_message.body());
+                    let mut cmd_ex = tokio::process::Command::new(cmd_and_args[0]);
+                    for argx in cmd_and_args.iter().skip(1) {
+                        cmd_ex.arg(argx);
+                    }
+                    //cmd_ex.arg(rest_message.body());
+                    let a = cmd_ex.output();
+                    //let a = tokio::process::Command::new("echo")
+                    //.arg("test.php")
+                    //.arg(" world")
+                    //.output();
                     let oo = a.await;
                     match oo {
                         Ok(xxx)=> {
@@ -107,8 +116,8 @@ impl ProcessControllerActor {
 actor_handler!({arbiter: &ArbiterHandler} => ProcessControllerActor, ProcessController, ProcMsg);
 
 impl ProcessController {
-    pub async fn run_back_process(&self, req: RestMessage, uuid: &str) -> () {
-        let msg = ProcMsg::newproc(req,uuid);
+    pub async fn run_back_process(&self, proce: &serviceconf::ProcEnv, req: RestMessage, uuid: &str) -> () {
+        let msg = ProcMsg::newproc(proce, req, uuid);
         match toktor_send!(self,msg).await {
             _ => {}
         };
@@ -124,8 +133,11 @@ mod tests {
     async fn run_process_controller() {
         let arbiter = toktor_new!(ArbiterHandler);
         let proco = toktor_new!(ProcessController, &arbiter);
-        let req = RestMessage::new("POST", "/put/staff/in", "true");
-        proco.run_back_process(req, "123123123123").await;
+        let j = serde_json::json!({"error": null, "data": [{"this":false,"that":true}]});
+        let pl = serde_json::to_string(&j).unwrap();
+        let req = RestMessage::new("POST", "/put/staff/in", &pl);
+        let proce = ProcEnv::new("", vec![], "echo {{jsonpayload}}", "");
+        proco.run_back_process(&proce, req, "123123123123").await;
         println!("now await ...");
         tokio::time::sleep(tokio::time::Duration::from_millis(2000)).await;
         println!("the time is over");

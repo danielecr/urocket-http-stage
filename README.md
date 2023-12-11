@@ -92,7 +92,7 @@ paths:
         wd: /src/scripts/php
         env:
           - MYENV=CI
-        cmd: /usr/bin/echo
+        cmd: /usr/bin/echo {{jsonpayload}}
         channel: "cmdline"
         encoding: json
       logstdout: true
@@ -184,7 +184,7 @@ REQUEST_ID={unique request id used to match the result}
 ```
 wd: /path/to/wd
 env: [string]
-cmd: command line
+cmd: command_line {{jsonpayload}} otherparam
 channel: cmdline | stdin | ...
 encoding: json
 ```
@@ -228,12 +228,12 @@ Maybe: use swagger crate, https://crates.io/crates/swagger
 **TODOs**:
 
 - ~~RequestVisor use Arbiter and replace it in frontserv/backserv~~
-- ProcessController match config and RestMessage to create a process
+- ~~ProcessController match config and RestMessage to create a process~~
 - ProcessController manage timeout (to kill and give back to arbiter)
 - ProcessController Timeouts maybe pinned to remove on process exit (??)
 - ProcessController should log something.
 - Log tracker: select something buffered.
-- RequestVisor accept ProcessController
+- ~~RequestVisor accept ProcessController~~
 - Add an ErrorXXX struct. Fix all `.unwrap()`s
 
 ## Current limits of tokio::process::Command

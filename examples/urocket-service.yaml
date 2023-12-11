@@ -12,7 +12,7 @@ paths:
         wd: /home/daniele/Development
         env:
           - MYENV=CI
-        cmd: /usr/bin/echo
+        cmd: /usr/bin/echo {{jsonpayload}}
         channel: "cmdline"
         encoding: json
       logstdout: true

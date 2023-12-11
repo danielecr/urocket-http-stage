@@ -2,7 +2,7 @@ use tokio::sync::{mpsc, oneshot::{Receiver, Sender, self}};
 
 extern crate toktor;
 use toktor::actor_handler;
-use crate::{toktor_send, arbiter::ForHttpResponse, arbiter::FrontResponse, serviceconf::ServiceConf};
+use crate::{toktor_send, arbiter::ForHttpResponse, arbiter::FrontResponse, serviceconf::ServiceConf, processcontroller::ProcessController};
 
 use crate::arbiter::ArbiterHandler;
 
@@ -24,15 +24,17 @@ pub enum ReqVisorMsg {
 pub struct RequestsVisorActor {
     receiver: mpsc::Receiver<ReqVisorMsg>,
     arbiter: ArbiterHandler,
+    pctl: ProcessController,
     config: ServiceConf
 }
 
 impl RequestsVisorActor {
-    pub fn new(receiver: mpsc::Receiver<ReqVisorMsg>, arbiter: &ArbiterHandler, conf: &ServiceConf) -> Self {
+    pub fn new(receiver: mpsc::Receiver<ReqVisorMsg>, arbiter: &ArbiterHandler, pctl: &ProcessController, conf: &ServiceConf) -> Self {
         //println!("REQUEST ACTOR:: {:?}",conf);
         RequestsVisorActor {
             receiver,
             arbiter: arbiter.clone(),
+            pctl: pctl.clone(),
             config: conf.clone()
         }
     }
@@ -48,12 +50,17 @@ impl RequestsVisorActor {
             ReqVisorMsg::RegisterPending { req, respond_to: tx } => {
                 let arb = self.arbiter.clone();
                 let config = self.config.clone();
+                let pctl = self.pctl.clone();
                 tokio::spawn(async move {
                     match config.match_request(&req) {
                         Some(va) => {
                             let (rx, uuid) = arb.add_request();
+                            println!("Do something {:?}", va.inject);
+                            if let Some(proce) = va.inject {
+                                pctl.run_back_process(&proce, req, &uuid).await;
+                            }
                             let _ = tx.send((rx,uuid));
-                            println!("Do something {:?}", va.inject)
+                            // processcontroller.delegate(va.inject, uuid, req);
                         },
                         None => {
                             println!("RequestVisor: leider it does not match any executor");
@@ -90,7 +97,7 @@ impl RequestsVisorActor {
     }
 }
 
-actor_handler!({arbiter: &ArbiterHandler, conf: &ServiceConf} => RequestsVisorActor, RequestsVisor, ReqVisorMsg);
+actor_handler!({arbiter: &ArbiterHandler, pctl: &ProcessController, conf: &ServiceConf} => RequestsVisorActor, RequestsVisor, ReqVisorMsg);
 
 
 pub struct ErrorBack {
@@ -150,7 +157,8 @@ mod tests {
     async fn visor_run() {
         let arbiter = toktor_new!(ArbiterHandler);
         let conf = ServiceConf::default();
-        let visor = toktor_new!(RequestsVisor, &arbiter, &conf);
+        let pctl = toktor_new!(ProcessController, &arbiter);
+        let visor = toktor_new!(RequestsVisor, &arbiter, &pctl, &conf);
         let req = RestMessage::new("get", "/myurl", "");
         let rx = visor.wait_for(req);
         let (x, uuid) =  rx.await.unwrap();
