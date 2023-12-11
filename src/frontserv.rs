@@ -74,10 +74,10 @@ pub async fn run_front(arbiter: &RequestsVisor) {
     let listener = TcpListener::bind(addr).await.unwrap();
     println!("Listening on http://{}", addr);
     loop {
-        let (stream, _) = listener.accept().await.unwrap();
+        let (stream, socket) = listener.accept().await.unwrap();
         let io = TokioIo::new(stream);
 
-        let svc = Svc::new(arbiter);
+        let svc = Svc::new(socket, arbiter);
 
         tokio::task::spawn(async move {
             if let Err(err) = http1::Builder::new()
@@ -96,12 +96,13 @@ pub async fn run_front(arbiter: &RequestsVisor) {
 
 #[derive(Clone)]
 struct Svc<T> {
+    socket: SocketAddr,
     vh: T
 }
 
 impl<T: Clone> Svc<T> {
-    fn new(vh:&T) -> Svc<T> {
-        Self { vh: vh.clone() }
+    fn new(socket: SocketAddr, vh:&T) -> Svc<T> {
+        Self { socket, vh: vh.clone() }
     }
 }
 
@@ -112,7 +113,9 @@ impl Service<Request<IncomingBody>> for Svc<RequestsVisor> {
 
     fn call(&self, req: Request<IncomingBody>) -> Self::Future {
         let vh = self.vh.clone();
+        let si = self.socket.clone();
         Box::pin(async move {
+            println!("receiving from {}:{}", si.ip(), si.port());
             let uri = req.uri().clone();
             //println!("req: {:?}",req);
             //let bod = req.collect().await.unwrap().to_bytes();

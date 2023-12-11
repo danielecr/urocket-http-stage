@@ -29,30 +29,53 @@ use hyper::body::Frame;
 use hyper::server::conn::http1;
 use hyper::service::{Service, service_fn};
 use hyper::{body::Incoming as IncomingBody, Request, Response};
-use tokio::net::{TcpListener,UnixListener};
+use tokio::net::unix::UCred;
+use tokio::net::{TcpListener,UnixListener, UnixStream};
 use hyper_util::rt::TokioIo;
 
 use std::future::Future;
 use std::pin::Pin;
+use std::sync::Arc;
 
 use crate::arbiter::ForHttpResponse;
 use crate::requestsvisor::RequestsVisor;
 
+// code from axum example
+#[derive(Clone,Debug)]
+struct UdsConnectInfo {
+    peer_addr: Arc<tokio::net::unix::SocketAddr>,
+    peer_cred: UCred,
+}
+
+impl UdsConnectInfo {
+    fn connect_info(target: &UnixStream) -> Self {
+        let peer_addr = target.peer_addr().unwrap();
+        let peer_cred = target.peer_cred().unwrap();
+        
+        Self {
+            peer_addr: Arc::new(peer_addr),
+            peer_cred,
+        }
+    }
+}
+
 pub async fn run_backserv(socketpath: &str, rv: &RequestsVisor) {
     let path = std::path::Path::new(socketpath);
-
+    
     if path.exists() {
         tokio::fs::remove_file(path).await.expect("Could not remove old socket!");
     }
-
+    
     let listener = UnixListener::bind(path).unwrap();
     println!("Backservice listening on unix:///{}", socketpath);
     //let listener = TcpListener::bind(addr).await.unwrap();
     loop {
-        let (stream, _) = listener.accept().await.unwrap();
+        let (stream, socket) = listener.accept().await.unwrap();
+        let ci = UdsConnectInfo::connect_info(&stream);
         let io = TokioIo::new(stream);
+
         
-        let svc = Svc::new(rv);
+        let svc = Svc::new(ci, rv);
         tokio::task::spawn(async move {
             if let Err(err) = // http1::Builder::new()
             http1::Builder::new().serve_connection(
@@ -69,12 +92,13 @@ pub async fn run_backserv(socketpath: &str, rv: &RequestsVisor) {
 
 #[derive(Clone)]
 struct Svc<T> {
+    ci: UdsConnectInfo,
     rv: T
 }
 
 impl<T: Clone> Svc<T> {
-    fn new(rv:&T) -> Svc<T> {
-        Self { rv: rv.clone() }
+    fn new(ci: UdsConnectInfo, rv:&T) -> Svc<T> {
+        Self { ci, rv: rv.clone() }
     }
 }
 
@@ -101,12 +125,12 @@ async fn getpayload(req: Request<IncomingBody>) -> Result<serde_json::Value,serd
     let frame_stream = req.into_body().map_frame(|frame| {
         let frame = if let Ok(data) = frame.into_data() {
             data.iter()
-                .map(|byte| byte.to_be())
-                .collect::<Bytes>()
+            .map(|byte| byte.to_be())
+            .collect::<Bytes>()
         } else {
             Bytes::new()
         };
-
+        
         Frame::data(frame)
     }).collect();
     //let (parts, body) = req.into_parts();
@@ -126,8 +150,9 @@ impl Service<Request<IncomingBody>> for Svc<RequestsVisor> {
     type Response = Response<Full<Bytes>>;
     type Error = hyper::Error;
     type Future = Pin<Box<dyn Future<Output = Result<Self::Response, Self::Error>> + Send>>;
-
+    
     fn call(&self, req: Request<IncomingBody>) -> Self::Future {
+        println!("receiving connection from {:?}",self.ci);
         let vh = self.rv.clone();
         Box::pin(async move {
             let uri: hyper::Uri = req.uri().clone();
@@ -184,6 +209,7 @@ impl Service<Request<IncomingBody>> for Svc<RequestsVisor> {
 // would be maybe-filter-in, executed, maybe-filter-out, maybe-timedout
 // 
 // match proxyto(arbiter).await {
-//   Ok(Consumed) => return Consumed
-//   Err(e) =>
-// }
+    //   Ok(Consumed) => return Consumed
+    //   Err(e) =>
+    // }
+    
