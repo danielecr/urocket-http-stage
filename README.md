@@ -124,6 +124,16 @@ curl_close($ch);
 print_r ($result);
 ```
 
+## Why not just nginx? or apache with mod_php?
+
+The intent is to quickly port with minimal changes. Typical use case are those of scripts
+launched by a cronjob, without any control, and that may be quickly ported by just ppanding
+5/5 lines at the end of the scripts.
+Also the plan is to define an automatic answer for "success", and output report.
+
+Why not Apache + mod_php:
+- because output is returned to the caller.
+- security model of mod_php is generally stricter than a PHP cli script
 
 ## Testing curl
 
