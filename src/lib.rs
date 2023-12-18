@@ -7,6 +7,7 @@ pub mod backserv;
 pub mod requestsvisor;
 pub mod restmessage;
 pub mod processcontroller;
+pub mod procenv;
 
 #[macro_export]
 macro_rules! toktor_send {

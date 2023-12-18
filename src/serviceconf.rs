@@ -14,40 +14,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::restmessage::RestMessage;
 
-#[derive(Serialize,Deserialize,Debug,Clone, Default)]
-pub struct ProcEnv {
-    pub wd: String,
-    pub env: Vec<String>,
-    pub cmd: String,
-    pub encoding: String,
-    pub channel: String
-}
-
-impl ProcEnv {
-    pub fn new(wd: &str, env: Vec<String>, cmd: &str, encoding: &str) -> Self {
-        ProcEnv {
-            wd: wd.to_string(),
-            env,
-            cmd: cmd.to_string(),
-            encoding: encoding.to_string(),
-            channel: "cmdline".to_string()
-        }
-    }
-    pub fn cmd_to_arr<'a> (&'a self) -> Vec<&'a str> {
-        self.cmd.split(&[' ','\t'][..]).collect()
-    }
-    pub fn cmd_to_arr_replace<'a>(&'a self, placeholder: &'a str, value: &'a str) -> Vec<&'a str> {
-        self.cmd.split(&[' ','\t'][..]).map(|x|{
-            if x == placeholder {
-                value
-            } else {
-                x
-            }
-        }).collect()
-    }
-}
-//impl ProcEnv<'a> {
-//}
+use crate::procenv::ProcEnv;
 
 #[derive(Serialize,Deserialize,Debug,Default,Clone)]
 pub struct VerbAction {

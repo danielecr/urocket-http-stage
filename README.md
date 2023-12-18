@@ -107,6 +107,7 @@ details.
 PHP use the socket for reply, i.e. libcurl:
 
 ```php
+$reqid = $_ENV["REQUEST_ID"];
 $ch = curl_init();
 
 // $postdata = json_encode($data); // typically
@@ -114,6 +115,7 @@ $postdata = '{"handler": "pricechange", "pricelist": [{"articlenr":"12312", ...}
 
 curl_setopt($ch, CURLOPT_UNIX_SOCKET_PATH, "/tmp/uselessrock.sock");
 
+curl_setopt($ch, CURLOPT_URL, "http://doesnotmatt.er/$reqid");
 curl_setopt($ch, CURLOPT_POST, 1);
 curl_setopt($ch, CURLOPT_POSTFIELDS, $postdata);
 curl_setopt($ch, CURLOPT_RETURNTRANSFER, 1); 

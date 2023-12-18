@@ -12,7 +12,19 @@ paths:
         wd: /home/daniele/Development
         env:
           - MYENV=CI
-        cmd: /usr/bin/echo {{jsonpayload}}
+        cmd: !ToSplit "/usr/bin/echo {{jsonpayload}}"
+        channel: "cmdline"
+        encoding: json
+      logstdout: true
+      validateout: false
+  /get/cats:
+    post:
+      validatein: false
+      inject:
+        wd: /home/daniele/Development
+        env:
+          - MYENV=CI
+        cmd: !Splitted ["/bin/sh","-c", "echo {{jsonpayload}} $REQUEST_ID"]
         channel: "cmdline"
         encoding: json
       logstdout: true
