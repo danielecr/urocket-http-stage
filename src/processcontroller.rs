@@ -84,7 +84,7 @@ impl ProcessControllerActor {
                     let cmd_and_args = proce.cmd_to_arr_replace("{{jsonpayload}}", rest_message.body());
                     //println!("COMMMA: {:?}",cmd_and_args);
                     let comma = format!("Cmd{}: {:?}",&uuid, cmd_and_args);
-                    let mut cmd_ex = tokio::process::Command::new(cmd_and_args[0]);
+                    let mut cmd_ex = tokio::process::Command::new(&cmd_and_args[0]);
                     cmd_ex.env("REQUEST_ID", uuid.clone());
                     for argx in cmd_and_args.iter().skip(1) {
                         cmd_ex.arg(argx);
