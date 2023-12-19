@@ -89,6 +89,9 @@ impl ProcessControllerActor {
                     for argx in cmd_and_args.iter().skip(1) {
                         cmd_ex.arg(argx);
                     }
+                    for (k,v) in proce.get_env() {
+                        cmd_ex.env(k,v);
+                    }
                     //cmd_ex.arg(rest_message.body());
                     let a = cmd_ex.output();
                     //let a = tokio::process::Command::new("echo")
@@ -153,7 +156,7 @@ mod tests {
         let j = serde_json::json!({"error": null, "data": [{"this":false,"that":true}]});
         let pl = serde_json::to_string(&j).unwrap();
         let req = RestMessage::new("POST", "/put/staff/in", &pl);
-        let proce = ProcEnv::new_v("", vec![], &vec!["/bin/sh", "-c", "echo {{jsonpayload}} $REQUEST_ID", "$SHELL"], "");
+        let proce = ProcEnv::new_v("", vec!["MYENV=provolone"], &vec!["/bin/sh", "-c", "echo {{jsonpayload}} $REQUEST_ID myenv:$MYENV"], "");
         proco.run_back_process(&proce, req, "IQARRAY").await;
         println!("now await ...");
         tokio::time::sleep(tokio::time::Duration::from_millis(2000)).await;

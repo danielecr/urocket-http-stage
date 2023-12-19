@@ -71,11 +71,11 @@ impl ProcEnv {
             channel: "cmdline".to_string()
         }
     }
-    pub fn new_v(wd: &str, env: Vec<String>, cmd: &[&str], encoding: &str) -> Self 
+    pub fn new_v(wd: &str, env: Vec<&str>, cmd: &[&str], encoding: &str) -> Self 
     {
         ProcEnv {
             wd: wd.to_string(),
-            env,
+            env: env.iter().map(|x|{x.to_string()}).collect(),
             //cmd: CmdDefinition::Splitted(cmd.iter().map(|x|{x.to_string()}).collect()),
             cmd: CmdDefinition::from(cmd.to_vec()),
             encoding: encoding.to_string(),
@@ -85,6 +85,15 @@ impl ProcEnv {
     
     pub fn cmd_to_arr_replace<'a>(&'a self, placeholder: &'a str, value: &'a str) -> Vec<String> {
         self.cmd.cmd_to_arr_replace(placeholder, value)
+    }
+
+    pub fn get_env(&self) -> Vec<(&str,&str)> {
+        self.env.iter().map(|x|{
+            let p = x.find("=").unwrap_or(0);
+            let (a,_) = x.split_at(p);
+            let (_,c) = x.split_at(p+1);
+            (a,c)
+        }).collect()
     }
 }
 
