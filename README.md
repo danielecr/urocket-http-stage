@@ -93,6 +93,7 @@ paths:
         env:
           - MYENV=CI
         cmd: /usr/bin/echo {{jsonpayload}}
+        timeout: 1000
         channel: "cmdline"
         encoding: json
       logstdout: true
@@ -227,48 +228,31 @@ Note: backserv just remove `/urhttp/` and take the rest as req_id. (see todo)
 
 ## TODO
 
-It's a kind of plan.
+The service works but it is too rigid. Code can not be splitted and reused in a
+productive way. For example processcontroller by itself can be a staff to be reused.
+And so for other parts.
 
-This project is on POC stage. What is in **already**:
+`frontserv` and `backserv` are the most service-specific staff.
 
-* there is an arbiter that store request_id and dispatch back response via a tokio channel
-* frontserv::run_front() listen on port 8080 and use arbiter to store req_id
-* backserv::run_backserv() listen on socket file and use arbiter to match and dispatch message to frontserv request waiting on channel.
-
-Maybe: use swagger crate, https://crates.io/crates/swagger
+toktor crate should be splitted and moved as indipendent, once it is more idiomatic.
 
 **TODOs**:
 
 - ~~RequestVisor use Arbiter and replace it in frontserv/backserv~~
 - ~~ProcessController match config and RestMessage to create a process~~
-- ProcessController manage timeout (to kill and give back to arbiter)
-- ProcessController Timeouts maybe pinned to remove on process exit (??)
+- ~~ProcessController manage timeout (to kill and give back to arbiter)~~
+- ~~ProcessController Timeouts maybe pinned to remove on process exit (??)~~
 - ProcessController should log something.
 - Log tracker: select something buffered.
 - ~~RequestVisor accept ProcessController~~
 - Add an ErrorXXX struct. Fix all `.unwrap()`s
 
-## Current limits of tokio::process::Command
+## Use `std::process::Command` not `tokio::process::Command`
 
-This https://github.com/tokio-rs/tokio/pull/2907 is very cool
+Instead of tokio, `std::process::Command` is used, this make possible to handle specific process information, and avoid zombie (it does not need tini, rif, https://github.com/krallin/tini)
 
-anyway it is not possible to `wait4()` a process to collect resource usage, as in
-https://github.com/Sackbuoy/mem_usage :
-
-```rust
-use wait4::{ResUse, Wait4};
-let process_resources: ResUse;
-
-let _child_process: Child = match cmd.spawn() {
-    Ok(mut child) => {
-        process_resources = child.wait4()?;
-        child
-    }
-    Err(e) => return Err(Box::new(e)),
-};
-```
-
-using https://crates.io/crates/wait4
+Also `wait4()` is called on each process, ResUse is not used still.
+(using https://crates.io/crates/wait4)
 
 That's really what is needed for stats.
 
@@ -283,6 +267,36 @@ https://docs.rs/procfs/latest/procfs/process/struct.Stat.html
 For stats: inspect procps before calling wait() in https://doc.rust-lang.org/std/process/struct.Child.html
 
 For monitoring use procps periodically.
+
+## Plan for stats
+
+I have not clear plan for stats. One can desire to have stat on response, as "added payload"
+struct on json, or as additional headers. The second option sounds better.
+
+This should be controlled by configuration file:
+
+```
+paths:
+  /get/pets:
+    get:
+      validatein: false
+      inject:
+        wd: /src/scripts/php
+        env:
+          - MYENV=CI
+        cmd: /usr/bin/echo {{jsonpayload}}
+        timeout: 1000
+        channel: "cmdline"
+        encoding: json
+      ## this would add http header urocket-stats: {time: 1.2, mem: 123123, ...}
+      stats: true
+      logstdout: true
+      validate-out: false
+```
+
+But currently there is no link between `requestvisor` and `processcontroller`,
+for implementing that `processcontroller` should provide a command to send back
+Resourse Usage.
 
 ## limits by Linux cgroups v2
 
@@ -299,5 +313,18 @@ by Kubernetes, and configured with cgroups v2 (hierarchical)
 And simpler is better, but a kind of ProcessDriver should be writed ad hoc, that plugs
 well in tokio async.
 
-
 https://docs.rs/cgroups-rs/0.3.4/cgroups_rs/cgroup_builder/index.html
+
+Looking at this, the options provided by cgroups_rs is:
+
+1. create the control group
+2. create the `Child` process
+3. insert the created `Child` into the created controlgroup
+
+Anyway this sequence should be quick enough.
+
+Another option is to use https://docs.rs/controlgroup/latest/controlgroup/ that look less
+maintained, or implement trait that extends `std::process::Command`, but I do not think it changes too much.
+
+Also things get complicated with hierarchical cgroups and the option to insert
+the process::id() into a main cgroups, then create cgroups based on a kind policy
