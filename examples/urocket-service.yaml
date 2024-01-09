@@ -14,6 +14,7 @@ paths:
           - MYENV=CI
         cmd: !ToSplit "/usr/bin/echo {{jsonpayload}}"
         channel: "cmdline"
+        timeout: 300
         encoding: json
       logstdout: true
       validateout: false

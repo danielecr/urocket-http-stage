@@ -93,23 +93,23 @@ impl Parse for TokStru {
     }
 }
 
-/// see comment below
-#[proc_macro_attribute]
-pub fn toktore(args: TokenStream, input: TokenStream) -> TokenStream {
-    parse_macro_input!(input as TokStru);
-
-    let x = format!(r#"
-        fn lsls() {{
-            println!("entering");
-            println!("args tokens: {{}}", {args});
-            println!("input tokens: ");
-            println!("exiting ");
-        }}
-    "#,
-            args = args.into_iter().count(),
-            
-    );
-
-    x.parse().expect("Generated invalid tokens")
-}
+// see comment below
+//#[proc_macro_attribute]
+//pub fn toktore(args: TokenStream, input: TokenStream) -> TokenStream {
+//    parse_macro_input!(input as TokStru);
+//
+//    let x = format!(r#"
+//        fn lsls() {{
+//            println!("entering");
+//            println!("args tokens: {{}}", {args});
+//            println!("input tokens: ");
+//            println!("exiting ");
+//        }}
+//    "#,
+//            args = args.into_iter().count(),
+//            
+//    );
+//
+//    x.parse().expect("Generated invalid tokens")
+//}
 

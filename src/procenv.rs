@@ -1,3 +1,5 @@
+use std::default;
+
 /// ProcEnv process execution environment definition is used to store
 /// the environment and the command to execute the
 /// callback process that fulfill the frondend request
@@ -56,6 +58,7 @@ pub struct ProcEnv {
     pub wd: String,
     pub env: Vec<String>,
     pub cmd: CmdDefinition,
+    pub timeout: Option<u32>,
     pub encoding: String,
     pub channel: String
 }
@@ -68,6 +71,7 @@ impl ProcEnv {
             //cmd: CmdDefinition::ToSplit(cmd.to_string()),
             cmd: CmdDefinition::from(cmd),
             encoding: encoding.to_string(),
+            timeout: Some(1000),
             channel: "cmdline".to_string()
         }
     }
@@ -78,6 +82,7 @@ impl ProcEnv {
             env: env.iter().map(|x|{x.to_string()}).collect(),
             //cmd: CmdDefinition::Splitted(cmd.iter().map(|x|{x.to_string()}).collect()),
             cmd: CmdDefinition::from(cmd.to_vec()),
+            timeout: Some(1000),
             encoding: encoding.to_string(),
             channel: "cmdline".to_string()
         }

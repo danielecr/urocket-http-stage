@@ -79,12 +79,16 @@ impl ProcessControllerActor {
                 // 3. store the process in a proclist for timeout
                 // do some thing based on config
                 tokio::spawn(async move {
-                    //let str = "ciao".to_string();
-                    //let v8 = Vec::<u8>::from(str);
+                    use std::io::{BufRead, BufReader};
+                    use std::process::{Command, Stdio};
+                    use wait4::{ResUse, Wait4};
+                    
+                    let timeout = proce.timeout.unwrap_or(1000);
                     let cmd_and_args = proce.cmd_to_arr_replace("{{jsonpayload}}", rest_message.body());
                     //println!("COMMMA: {:?}",cmd_and_args);
                     let comma = format!("Cmd{}: {:?}",&uuid, cmd_and_args);
-                    let mut cmd_ex = tokio::process::Command::new(&cmd_and_args[0]);
+                    //let mut cmd_ex = tokio::process::Command::new(&cmd_and_args[0]);
+                    let mut cmd_ex = std::process::Command::new(&cmd_and_args[0]);
                     cmd_ex.env("REQUEST_ID", uuid.clone());
                     for argx in cmd_and_args.iter().skip(1) {
                         cmd_ex.arg(argx);
@@ -92,22 +96,40 @@ impl ProcessControllerActor {
                     for (k,v) in proce.get_env() {
                         cmd_ex.env(k,v);
                     }
-                    //cmd_ex.arg(rest_message.body());
-                    let a = cmd_ex.output();
-                    //let a = tokio::process::Command::new("echo")
-                    //.arg("test.php")
-                    //.arg(" world")
-                    //.output();
-                    let oo = a.await;
-                    match oo {
-                        Ok(xxx)=> {
-                            println!("Execution STATUS {comma}?? {:?}",xxx.status.success());
-                            let oo = std::str::from_utf8(&xxx.stdout).unwrap();
-                            println!("Execution STDOUT {comma}?? {}",oo);
-                            println!("Execution STDERR {comma}?? {:#?}",xxx.stderr);
+                    cmd_ex.stderr(Stdio::piped());
+                    cmd_ex.stdout(Stdio::piped());
+                    let mut child = cmd_ex.spawn().unwrap();
+                    
+                    let id = child.id();
+                    let _ = tokio::spawn(async move {
+                        tokio::time::sleep(tokio::time::Duration::from_millis(timeout as u64)).await;
+                        println!("Time is over for {}",id as i32);
+                        unsafe { libc::kill(id as i32, libc::SIGTERM); }
+                    }).await;
+                    let child_stdout = child
+                    .stdout
+                    .take()
+                    .expect("Internal error, could not take stdout");
+                    let child_stderr = child
+                    .stderr
+                    .take()
+                    .expect("Internal error, could not take stderr");
+                    let stdout_lines = BufReader::new(child_stdout).lines();
+                    let stderr_lines = BufReader::new(child_stderr).lines();
+                    for line in stdout_lines {
+                        let line = line.unwrap();
+                        println!("stdOut Pid({id}): {}", line);
+                    }
+                    for line in stderr_lines {
+                        let line = line.unwrap();
+                        println!("stdErr Pid({id}): {}", line);
+                    }
+                    match child.wait4() {
+                        Ok(ruse)=> {
+                            println!("Resource USAGE Pid({id}) {comma}?? {:?}",ruse);
                         }
                         Err(e) => {
-                            println!("Execution ERROR {comma}{}", e);
+                            println!("Execution ERROR Pid({id}) {comma}{}", e);
                         }
                     };
                 });
@@ -142,7 +164,9 @@ mod tests {
         let j = serde_json::json!({"error": null, "data": [{"this":false,"that":true}]});
         let pl = serde_json::to_string(&j).unwrap();
         let req = RestMessage::new("POST", "/put/staff/in", &pl);
-        let proce = ProcEnv::new("", vec![], "echo {{jsonpayload}} $REQUEST_ID $SHELL", "");
+        //let proce = ProcEnv::new("", vec![], "echo {{jsonpayload}} $REQUEST_ID $SHELL", "");
+        let mut proce = ProcEnv::new("", vec![], "sleep 1", "");
+        proce.timeout = Some(100);
         proco.run_back_process(&proce, req, "123123123123").await;
         println!("now await ...");
         tokio::time::sleep(tokio::time::Duration::from_millis(2000)).await;

@@ -39,7 +39,7 @@ Define an attribute macro for parsing this
 
 ```rust
 #[toktore]
-struct FeedbackInterceptorHandler{
+struct FeedbackInterceptor{
     actor: FeedbackInterceptor,
     message: Msg,
     #[newparam]

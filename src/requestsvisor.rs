@@ -21,7 +21,7 @@ pub enum ReqVisorMsg {
     }
 }
 
-pub struct RequestsVisorActor {
+struct RequestsVisorActor {
     receiver: mpsc::Receiver<ReqVisorMsg>,
     arbiter: ArbiterHandler,
     pctl: ProcessController,

@@ -46,7 +46,7 @@ pub enum ProxyMsg {
 /// Arbiter
 /// Does not it sound weird that it is storing the ProxyMsg::FulfillRequest's as well?
 /// !!!TODO: review this
-pub struct Arbiter {
+struct Arbiter {
     receiver: mpsc::Receiver<ProxyMsg>,
     subscriptions: Arc<TMutex<HashMap<String,ProxyMsg>>>,
 }
