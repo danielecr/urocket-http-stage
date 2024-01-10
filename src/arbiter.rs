@@ -70,7 +70,7 @@ impl Arbiter {
                 let subscriptions = self.subscriptions.clone();
                 tokio::spawn(async move {
                     let mut subscrs = subscriptions.lock().await;
-                    (*subscrs).insert(request_id.clone(), ProxyMsg::AddSubscriber { request_id: request_id, timeout, respond_to: tx });
+                    (*subscrs).insert(request_id.clone(), ProxyMsg::AddSubscriber { request_id, timeout, respond_to: tx });
                     drop(subscrs);
                 });
             },

@@ -157,7 +157,7 @@ mod tests {
     async fn visor_run() {
         let arbiter = toktor_new!(ArbiterHandler);
         let conf = ServiceConf::default();
-        let pctl = toktor_new!(ProcessController, &arbiter);
+        let pctl = toktor_new!(ProcessController);
         let visor = toktor_new!(RequestsVisor, &arbiter, &pctl, &conf);
         let req = RestMessage::new("get", "/myurl", "");
         let rx = visor.wait_for(req);

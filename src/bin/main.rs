@@ -27,7 +27,7 @@ async fn main() -> Result<(),()> {
     let conf = config.clone_paths();
 
     let arbiter = toktor_new!(ArbiterHandler);
-    let pctl = toktor_new!(ProcessController, &arbiter);
+    let pctl = toktor_new!(ProcessController);
     let requests_visor = toktor_new!(RequestsVisor, &arbiter, &pctl, &conf);
     let rv = requests_visor.clone();
     tokio::spawn(async move {
