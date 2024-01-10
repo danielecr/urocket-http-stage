@@ -12,7 +12,7 @@ use urocket_http_stage::frontserv::run_front;
 use urocket_http_stage::backserv::run_backserv;
 use urocket_http_stage::requestsvisor::RequestsVisor;
 
-#[tokio::main]
+#[tokio::main(flavor = "multi_thread", worker_threads = 10)]
 async fn main() -> Result<(),()> {
     let mut config = parse();
     //config.set_config(ServiceConf::parse_service_def(&config.configfile).await);

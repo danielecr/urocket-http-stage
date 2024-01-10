@@ -1,11 +1,12 @@
 /// Process Controller - Controls OS process spawned, and stops them if timeout expires
 /// This just spawn process and after timeout send kill 9 (SIGKILL) and wait4 to get exit status
-/// (Well, that kill 9 feature is just in my mind, not in the code. !!!TODO: Change This.)
 /// There are three cases:
 ///  1. timeout
 ///  2. normal termination
 ///  3. abnormal termination (exit code != 0)
-/// Timeout and normal termination are not handled: requestsvisor would handle timeout by itself
+/// Timeout is controlled by `timeout` in ProcEnv, after timeout ms the process receive
+/// kill() with SIGKILL (9).
+/// Normal termination.
 /// and "normal termination without a feedback on the socket" would be handled as a timeout.
 /// In case of abnormal termination, the policy is defined by the `exitAutoFeedback`:
 /// - exitAutoFeedback: true, on exit !=0 send a 500 message (internal service error)
@@ -125,7 +126,7 @@ impl ProcessControllerActor {
                         println!("Time is over for {}",id as i32);
                         let res = unsafe { libc::kill(id as i32, libc::SIGTERM) };
                         println!("Killing result {res} {}",id as i32);
-                    }).await;
+                    });
                     let child_stdout = child
                     .stdout
                     .take()
@@ -203,23 +204,23 @@ mod tests {
     use crate::toktor_new;
     use super::*;
     
-    #[tokio::test]
+    #[tokio::test(flavor = "multi_thread", worker_threads = 3)]
     async fn run_process_controller() {
         let proco = toktor_new!(ProcessController);
         let j = serde_json::json!({"error": null, "data": [{"this":false,"that":true}]});
         let pl = serde_json::to_string(&j).unwrap();
         let req = RestMessage::new("POST", "/put/staff/in", &pl);
         //let proce = ProcEnv::new("", vec![], "echo {{jsonpayload}} $REQUEST_ID $SHELL", "");
-        let mut proce = ProcEnv::new("", vec![], "sleep 12", "");
-        proce.timeout = Some(100);
+        let mut proce = ProcEnv::new("", vec![], "sleep 2", "");
+        proce.timeout = Some(4000);
         proco.run_back_process(&proce, req, "123123123123").await;
         println!("now await ...");
         tokio::time::sleep(tokio::time::Duration::from_millis(2000)).await;
-        tokio::time::sleep(tokio::time::Duration::from_millis(4000)).await;
+        tokio::time::sleep(tokio::time::Duration::from_millis(7000)).await;
         println!("the time is over");
     }
 
-    #[tokio::test]
+    #[tokio::test(flavor = "multi_thread", worker_threads = 3)]
     async fn process_print_env() {
         let proco = toktor_new!(ProcessController);
         let j = serde_json::json!({"error": null, "data": [{"this":false,"that":true}]});
