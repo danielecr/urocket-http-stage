@@ -251,10 +251,11 @@ toktor crate should be splitted and moved as indipendent, once it is more idioma
 
 Instead of tokio, `std::process::Command` is used, this make possible to handle specific process information, and avoid zombie (it does not need tini, rif, https://github.com/krallin/tini)
 
-Also `wait4()` is called on each process, ResUse is not used still.
-(using https://crates.io/crates/wait4)
+Also `wait4()` is called on each process (using https://crates.io/crates/wait4).
 
-That's really what is needed for stats.
+ResUse is stored in ProcessInfos, at least for 2 seconds after the end of the process,
+together with StdOut and StdErr. If requested it is returned over a mpsc channel,
+as Option<ProcessInfos> (if requested too late it is just None).
 
 Also it can be desirable to have monitoring staff
 
@@ -270,8 +271,8 @@ For monitoring use procps periodically.
 
 ## Plan for stats
 
-I have not clear plan for stats. One can desire to have stat on response, as "added payload"
-struct on json, or as additional headers. The second option sounds better.
+Stats is still not implemented. ResUse is collected but requestvisor is not
+asking for stats.
 
 This should be controlled by configuration file:
 
@@ -294,9 +295,15 @@ paths:
       validate-out: false
 ```
 
-But currently there is no link between `requestvisor` and `processcontroller`,
-for implementing that `processcontroller` should provide a command to send back
-Resourse Usage.
+When is `stats: true` the response header should contains something like:
+
+```
+urocket-stats: ResourceUsage { utime: 1.886ms, stime: 0ns, maxrss: 5505024 }
+```
+
+Some more info should be collected, maybe stdout len, stderr len, start time, and so on.
+
+One can think about stats write in file, or stat printout also.
 
 ## limits by Linux cgroups v2
 

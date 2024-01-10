@@ -55,14 +55,18 @@ impl ProcMsg {
 use wait4::{ResUse, Wait4};
 
 #[derive(Default, Debug)]
-struct ProcessInfos {
+pub struct ProcessInfos {
     uuid: String,
     resources: Option<ResUse>,
+    stdout: String,
+    stderr: String,
 }
+
+type AtomicHash = Arc<TMutex<HashMap<String, ProcessInfos>>>;
 
 struct ProcessControllerActor {
     receiver: mpsc::Receiver<ProcMsg>,
-    proc_infos: Arc<TMutex<HashMap<String,ProcessInfos>>>,
+    proc_infos: AtomicHash,
 }
 
 impl ProcessControllerActor {
@@ -79,12 +83,14 @@ impl ProcessControllerActor {
         }
     }
 
-    async fn add_proc_infos(b: Arc<TMutex<HashMap<String, ProcessInfos>>>, uuid: &str, ruse: ResUse) {
+    async fn add_proc_infos(b: AtomicHash, uuid: &str, ruse: ResUse, sout: String, serr: String) {
         //let b: Arc<TMutex<HashMap<String, ProcessInfos>>> = self.proc_infos.clone();
         let mut infos = b.lock().await;
-        let pi = ProcessInfos{
+        let pi = ProcessInfos {
             uuid: uuid.to_string(),
-            resources: Some(ruse)
+            resources: Some(ruse),
+            stdout: sout,
+            stderr: serr,
         };
         (*infos).insert(uuid.to_string(), pi);
         drop(infos);
@@ -105,7 +111,6 @@ impl ProcessControllerActor {
                     
                     let timeout = proce.timeout.unwrap_or(1000);
                     let cmd_and_args = proce.cmd_to_arr_replace("{{jsonpayload}}", rest_message.body());
-                    //println!("COMMMA: {:?}",cmd_and_args);
                     let comma = format!("Cmd{}: {:?}",&uuid, cmd_and_args);
                     //let mut cmd_ex = tokio::process::Command::new(&cmd_and_args[0]);
                     let mut cmd_ex = std::process::Command::new(&cmd_and_args[0]);
@@ -123,7 +128,6 @@ impl ProcessControllerActor {
                     let id = child.id();
                     let _eutanasia = tokio::spawn(async move {
                         tokio::time::sleep(tokio::time::Duration::from_millis(timeout as u64)).await;
-                        println!("Time is over for {}",id as i32);
                         let res = unsafe { libc::kill(id as i32, libc::SIGTERM) };
                         println!("Killing result {res} {}",id as i32);
                     });
@@ -137,18 +141,22 @@ impl ProcessControllerActor {
                     .expect("Internal error, could not take stderr");
                     let stdout_lines = BufReader::new(child_stdout).lines();
                     let stderr_lines = BufReader::new(child_stderr).lines();
-                    for line in stdout_lines {
-                        let line = line.unwrap();
-                        println!("stdOut Pid({id}): {}", line);
-                    }
-                    for line in stderr_lines {
-                        let line = line.unwrap();
-                        println!("stdErr Pid({id}): {}", line);
-                    }
+                    let stdout_buf = stdout_lines.map(|x|{
+                        match x {
+                            Ok(s) => format!("Pid({id}) OUT: {s}"),
+                            Err(e) => format!("error: {:?}",e)
+                        }
+                    }).collect::<Vec<String>>().join("\n");
+                    let stderr_buf = stderr_lines.map(|x|{
+                        match x {
+                            Ok(s) => format!("Pid({id}) ERR: {s}"),
+                            Err(e) => format!("error: {:?}",e)
+                        }
+                    }).collect::<Vec<String>>().join("\n");
                     match child.wait4() {
                         Ok(ruse)=> {
-                            println!("Resource USAGE Pid({id}) {comma}?? {:?}",ruse);
-                            Self::add_proc_infos(proc_infos.clone(), &uuid, ruse).await;
+                            //println!("Resource USAGE Pid({id}) {comma}?? {:?}",ruse);
+                            Self::add_proc_infos(proc_infos.clone(), &uuid, ruse, stdout_buf, stderr_buf).await;
                         }
                         Err(e) => {
                             println!("Execution ERROR Pid({id}) {comma}{}", e);
@@ -163,6 +171,7 @@ impl ProcessControllerActor {
                             println!("after long run, removing staff {:?}", pi);
                         }
                     }).await;
+                    // this is gone: out of scope, does not matter
                     //let _ = eutanasia.await;
                 });
             }
@@ -194,8 +203,11 @@ impl ProcessController {
         };
     }
 
-    pub async fn get_infos(&self, uuid: &str) -> () {
-
+    pub async fn get_infos(&self, uuid: &str, tx: Sender<Option<ProcessInfos>>) -> () {
+        let msg = ProcMsg::new_infos(uuid, tx);
+        match toktor_send!(self, msg).await {
+            _ => {}
+        };
     }
 }
 
@@ -230,6 +242,31 @@ mod tests {
         proco.run_back_process(&proce, req, "IQARRAY").await;
         println!("now await ...");
         tokio::time::sleep(tokio::time::Duration::from_millis(2000)).await;
+        tokio::time::sleep(tokio::time::Duration::from_millis(5000)).await;
+        println!("the time is over");
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 3)]
+    async fn process_get_infos() {
+        let proco = toktor_new!(ProcessController);
+        let j = serde_json::json!({"error": null, "data": [{"this":false,"that":true}]});
+        let pl = serde_json::to_string(&j).unwrap();
+        let req = RestMessage::new("POST", "/put/staff/in", &pl);
+        let proce = ProcEnv::new_v("", vec!["MYENV=provolone"], &vec!["/bin/sh", "-c", "echo {{jsonpayload}} $REQUEST_ID myenv:$MYENV"], "");
+        let uuid = String::from("REQUEST-ID1");
+        proco.run_back_process(&proce, req, &uuid).await;
+        println!("now await ...");
+        tokio::time::sleep(tokio::time::Duration::from_millis(2000)).await;
+        let (tx, mut rx) = tokio::sync::mpsc::channel(1);
+        proco.get_infos(&uuid, tx).await;
+        match rx.recv().await {
+            Some( r) => {
+                println!("Received {:?}", r);
+            },
+            _ => {
+                //println!("receive error {:?}", _);
+            }
+        };
         tokio::time::sleep(tokio::time::Duration::from_millis(5000)).await;
         println!("the time is over");
     }
