@@ -6,26 +6,45 @@
 ///  3. abnormal termination (exit code != 0)
 /// Timeout is controlled by `timeout` in ProcEnv, after timeout ms the process receive
 /// kill() with SIGKILL (9).
-/// Normal termination.
-/// and "normal termination without a feedback on the socket" would be handled as a timeout.
-/// In case of abnormal termination, the policy is defined by the `exitAutoFeedback`:
-/// - exitAutoFeedback: true, on exit !=0 send a 500 message (internal service error)
-/// - exitAutoFeedback: false, does nothing (wait the timeout)
+/// Note: timeout's kill is called in a std::thread::spawn, not tokio async rt, this
+/// is more reliable.
+/// ProcessInfos containing the execution infos with details (including stderr and stdout),
+/// can be requested by:
 /// 
-/// Process stdout and stderr are logged on stdout with req_id info, i.e.:
+///   let (tx, mut rx) = tokio::sync::mpsc::channel(1);
+///   pc.get_infos(&uuid, tx).await;
+///   match rx.recv().await {
+///     Some(r: Option<ProcessInfos>) => {
+///         println!("Received {:?}", r);
+///     },
+///     _ => {
+///         //println!("receive error {:?}", _);
+///     }
+///   };
 /// 
-/// [ts] [req_id] - [stdout from process]
-/// 
-/// also this options is specific for each path
+/// it might returns None if uuid is wrong or the request is older than 4 seconds.
+/// After 4 seconds the ProcessInfos is thrown away to free memory,
+/// the frontserv must be quick enough to collect or forget stats about process
+
 
 use std::sync::Arc;
 use tokio::sync::{Mutex as TMutex, mpsc};
 use tokio::sync::mpsc::Sender;
 use std::collections::HashMap;
+use std::io::{BufRead, BufReader};
+use std::process::{Command, Stdio};
+use wait4::{ResUse, Wait4};
+use std::time::{SystemTime, UNIX_EPOCH};
+
 use crate::{procenv::ProcEnv, restmessage::RestMessage};
 extern crate toktor;
 use toktor::actor_handler;
 use crate::toktor_send;
+
+fn get_now_ms() -> u128 {
+    SystemTime::now().duration_since(UNIX_EPOCH)
+    .unwrap().as_millis()
+}
 
 enum ProcMsg {
     AddProc {
@@ -52,12 +71,16 @@ impl ProcMsg {
     }
 }
 
-use wait4::{ResUse, Wait4};
-
+/// ProcessInfos contain the execution infos
+/// uuid is the request id, pid is the pid, and so on
 #[derive(Default, Debug)]
 pub struct ProcessInfos {
     uuid: String,
+    pid: u32,
+    start_ms: u128,
+    stop_ms: u128,
     resources: Option<ResUse>,
+    was_killed: bool,
     stdout: String,
     stderr: String,
 }
@@ -72,8 +95,8 @@ struct ProcessControllerActor {
 impl ProcessControllerActor {
     pub fn new(receiver: mpsc::Receiver<ProcMsg>) -> Self {
         ProcessControllerActor {
-                receiver,
-                proc_infos: Arc::new(TMutex::new(HashMap::new()))
+            receiver,
+            proc_infos: Arc::new(TMutex::new(HashMap::new()))
         }
     }
 
@@ -83,12 +106,15 @@ impl ProcessControllerActor {
         }
     }
 
-    async fn add_proc_infos(b: AtomicHash, uuid: &str, ruse: ResUse, sout: String, serr: String) {
-        //let b: Arc<TMutex<HashMap<String, ProcessInfos>>> = self.proc_infos.clone();
+    async fn add_proc_infos(b: AtomicHash, pid: u32, start_ms: u128, stop_ms: u128, was_killed: bool, uuid: &str, ruse: ResUse, sout: String, serr: String) {
         let mut infos = b.lock().await;
         let pi = ProcessInfos {
             uuid: uuid.to_string(),
+            pid,
+            start_ms,
+            stop_ms,
             resources: Some(ruse),
+            was_killed,
             stdout: sout,
             stderr: serr,
         };
@@ -99,21 +125,13 @@ impl ProcessControllerActor {
     fn handle_message(&mut self, msg: ProcMsg) {
         match msg {
             ProcMsg::AddProc { proce, rest_message, uuid } => {
-                // TODO:
-                // 1. match the rest_message with config
-                // 2. create a process compatible
-                // 3. store the process in a proclist for timeout
-                // do some thing based on config
                 let proc_infos = self.proc_infos.clone();
                 tokio::spawn(async move {
-                    use std::io::{BufRead, BufReader};
-                    use std::process::{Command, Stdio};
-                    
+                    let start_ms = get_now_ms();
                     let timeout = proce.timeout.unwrap_or(1000);
                     let cmd_and_args = proce.cmd_to_arr_replace("{{jsonpayload}}", rest_message.body());
                     let comma = format!("Cmd{}: {:?}",&uuid, cmd_and_args);
-                    //let mut cmd_ex = tokio::process::Command::new(&cmd_and_args[0]);
-                    let mut cmd_ex = std::process::Command::new(&cmd_and_args[0]);
+                    let mut cmd_ex = Command::new(&cmd_and_args[0]);
                     cmd_ex.env("REQUEST_ID", uuid.clone());
                     for argx in cmd_and_args.iter().skip(1) {
                         cmd_ex.arg(argx);
@@ -125,11 +143,12 @@ impl ProcessControllerActor {
                     cmd_ex.stdout(Stdio::piped());
                     let mut child = cmd_ex.spawn().unwrap();
                     
-                    let id = child.id();
-                    let _eutanasia = tokio::spawn(async move {
-                        tokio::time::sleep(tokio::time::Duration::from_millis(timeout as u64)).await;
-                        let res = unsafe { libc::kill(id as i32, libc::SIGTERM) };
-                        println!("Killing result {res} {}",id as i32);
+                    let pid = child.id();
+                    let in_millis = std::time::Duration::from_millis(timeout as u64);
+                    let eutanasia = std::thread::spawn(move || {
+                        // sleep for at least the specified amount of time
+                        std::thread::sleep(in_millis);
+                        unsafe { libc::kill(pid as i32, libc::SIGTERM) }
                     });
                     let child_stdout = child
                     .stdout
@@ -143,23 +162,28 @@ impl ProcessControllerActor {
                     let stderr_lines = BufReader::new(child_stderr).lines();
                     let stdout_buf = stdout_lines.map(|x|{
                         match x {
-                            Ok(s) => format!("Pid({id}) OUT: {s}"),
-                            Err(e) => format!("error: {:?}",e)
+                            Ok(s) => s,
+                            Err(e) => format!("EE: {:?}",e)
                         }
                     }).collect::<Vec<String>>().join("\n");
                     let stderr_buf = stderr_lines.map(|x|{
                         match x {
-                            Ok(s) => format!("Pid({id}) ERR: {s}"),
-                            Err(e) => format!("error: {:?}",e)
+                            Ok(s) => s,
+                            Err(e) => format!("EE: {:?}",e)
                         }
                     }).collect::<Vec<String>>().join("\n");
                     match child.wait4() {
                         Ok(ruse)=> {
-                            //println!("Resource USAGE Pid({id}) {comma}?? {:?}",ruse);
-                            Self::add_proc_infos(proc_infos.clone(), &uuid, ruse, stdout_buf, stderr_buf).await;
+                            let stop_ms = get_now_ms();
+                            let was_killed = if eutanasia.is_finished() {
+                                eutanasia.join().unwrap() != -1
+                            } else {
+                                false
+                            };
+                            Self::add_proc_infos(proc_infos.clone(), pid, start_ms, stop_ms, was_killed, &uuid, ruse, stdout_buf, stderr_buf).await;
                         }
                         Err(e) => {
-                            println!("Execution ERROR Pid({id}) {comma}{}", e);
+                            println!("Execution ERROR Pid({pid}) {comma}{}", e);
                         }
                     };
                     let _selfclean = tokio::spawn(async move {
@@ -171,8 +195,6 @@ impl ProcessControllerActor {
                             println!("after long run, removing staff {:?}", pi);
                         }
                     }).await;
-                    // this is gone: out of scope, does not matter
-                    //let _ = eutanasia.await;
                 });
             }
             ProcMsg::GetInfos { uuid, tx } => {
@@ -216,7 +238,7 @@ mod tests {
     use crate::toktor_new;
     use super::*;
     
-    #[tokio::test(flavor = "multi_thread", worker_threads = 3)]
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn run_process_controller() {
         let proco = toktor_new!(ProcessController);
         let j = serde_json::json!({"error": null, "data": [{"this":false,"that":true}]});
@@ -224,15 +246,15 @@ mod tests {
         let req = RestMessage::new("POST", "/put/staff/in", &pl);
         //let proce = ProcEnv::new("", vec![], "echo {{jsonpayload}} $REQUEST_ID $SHELL", "");
         let mut proce = ProcEnv::new("", vec![], "sleep 2", "");
-        proce.timeout = Some(4000);
+        proce.timeout = Some(300);
         proco.run_back_process(&proce, req, "123123123123").await;
         println!("now await ...");
         tokio::time::sleep(tokio::time::Duration::from_millis(2000)).await;
-        tokio::time::sleep(tokio::time::Duration::from_millis(7000)).await;
+        tokio::time::sleep(tokio::time::Duration::from_millis(8000)).await;
         println!("the time is over");
     }
 
-    #[tokio::test(flavor = "multi_thread", worker_threads = 3)]
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn process_print_env() {
         let proco = toktor_new!(ProcessController);
         let j = serde_json::json!({"error": null, "data": [{"this":false,"that":true}]});
@@ -246,7 +268,7 @@ mod tests {
         println!("the time is over");
     }
 
-    #[tokio::test(flavor = "multi_thread", worker_threads = 3)]
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn process_get_infos() {
         let proco = toktor_new!(ProcessController);
         let j = serde_json::json!({"error": null, "data": [{"this":false,"that":true}]});
