@@ -1,14 +1,36 @@
+use std::collections::HashMap;
+
+use serde::{Deserialize, Serialize};
 use tokio::sync::{mpsc, oneshot::{Receiver, Sender, self}};
+
+use std::sync::Arc;
+use tokio::sync::Mutex as TMutex;
 
 extern crate toktor;
 use toktor::actor_handler;
-use crate::{toktor_send, arbiter::ForHttpResponse, arbiter::FrontResponse, serviceconf::ServiceConf, processcontroller::ProcessController};
-
-use crate::arbiter::ArbiterHandler;
+use crate::{toktor_send, serviceconf::ServiceConf, processcontroller::ProcessController};
 
 use crate::restmessage::RestMessage;
 
-pub enum ReqVisorMsg {
+
+#[derive(Default,Serialize,Deserialize,Debug,Clone,PartialEq)]
+pub struct ForHttpResponse {
+    pub code: u32,
+    pub data: serde_json::Value,
+}
+
+pub enum FrontResponse {
+    BackMsg(ForHttpResponse),
+    InternalError,
+}
+
+struct Subscriber {
+    request_id: String,
+    timeout: u64,
+    respond_to: oneshot::Sender<FrontResponse>
+}
+
+enum ReqVisorMsg {
     RegisterPending {
         //req: Request<IncomingBody>,
         req: RestMessage,
@@ -23,17 +45,17 @@ pub enum ReqVisorMsg {
 
 struct RequestsVisorActor {
     receiver: mpsc::Receiver<ReqVisorMsg>,
-    arbiter: ArbiterHandler,
+    subscriptions: Arc<TMutex<HashMap<String,Subscriber>>>,
     pctl: ProcessController,
     config: ServiceConf
 }
 
 impl RequestsVisorActor {
-    pub fn new(receiver: mpsc::Receiver<ReqVisorMsg>, arbiter: &ArbiterHandler, pctl: &ProcessController, conf: &ServiceConf) -> Self {
+    pub fn new(receiver: mpsc::Receiver<ReqVisorMsg>, pctl: &ProcessController, conf: &ServiceConf) -> Self {
         //println!("REQUEST ACTOR:: {:?}",conf);
         RequestsVisorActor {
             receiver,
-            arbiter: arbiter.clone(),
+            subscriptions: Arc::new(TMutex::new(HashMap::new())),
             pctl: pctl.clone(),
             config: conf.clone()
         }
@@ -47,27 +69,37 @@ impl RequestsVisorActor {
 
     fn handle_message(&mut self, msg: ReqVisorMsg) {
         match msg {
-            ReqVisorMsg::RegisterPending { req, respond_to: tx } => {
-                let arb = self.arbiter.clone();
+            ReqVisorMsg::RegisterPending { req, respond_to } => {
+                let subscriptions = self.subscriptions.clone();
                 let config = self.config.clone();
                 let pctl = self.pctl.clone();
                 tokio::spawn(async move {
                     match config.match_request(&req) {
                         Some(va) => {
-                            let (rx, uuid) = arb.add_request();
+                            let (tx, rx) = tokio::sync::oneshot::channel();
+                            let uuid: String = uuid::Uuid::new_v4().to_string();
+                            let msg_sub = Subscriber {
+                                request_id: uuid.clone(),
+                                timeout: 40000,
+                                respond_to: tx
+                            };
+                            {
+                                let mut subscrs = subscriptions.lock().await;
+                                (*subscrs).insert(uuid.clone(), msg_sub);
+                                drop(subscrs);
+                            }
                             println!("Do something {:?}", va.inject);
                             if let Some(proce) = va.inject {
                                 pctl.run_back_process(&proce, req, &uuid).await;
                             }
-                            let _ = tx.send((rx,uuid));
-                            // processcontroller.delegate(va.inject, uuid, req);
+                            let _ = respond_to.send((rx,uuid));
                         },
                         None => {
                             println!("RequestVisor: leider it does not match any executor");
                             // so return something like code 500 to the caller.
                             let (tx2, rx ) = oneshot::channel();
                             let _ = tx2.send(FrontResponse::InternalError);
-                            let _ = tx.send((rx,String::from("")));
+                            let _ = respond_to.send((rx,String::from("")));
                         }
                     };
 
@@ -80,24 +112,34 @@ impl RequestsVisorActor {
                 });
             }
             ReqVisorMsg::FulfillPending { req_id, response, respond_to } => {
-                let arb = self.arbiter.clone();
+                let subscriptions = self.subscriptions.clone();
                 tokio::spawn(async move {
-                    let mypush = arb.fulfill_request(&req_id, response).await;
-                    match mypush.await {
-                        Ok(matched) => respond_to.send(Ok(matched)),
-                        Err(e) => {
-                            eprintln!("channel error: {:?}",e);
-                            respond_to.send(Err(()))
-                        }
+                    let mut subscrs = subscriptions.lock().await;
+                    if let Some(m) = subscrs.remove(&req_id) {
+                        match m {
+                            Subscriber { request_id: _, timeout: _, respond_to: tx } => {
+                                let _ = tx.send(FrontResponse::BackMsg(response));
+                                let _ = respond_to.send(Ok(true));
+                            },
+                            _ => {
+                                // Literally impossible: ProxyMsg::FulfillRequest is never inserted
+                            }
+                        };
+                    } else {
+                        // !!!TODO:
+                        // 1. something else replied 
+                        // 2. receiving a message not belonging to arbiter
+                        // in any case log the message
+                        let _ = respond_to.send(Err(()));
                     }
-                    //respond_to.send(Ok(true));
+
                 });
             }
         };
     }
 }
 
-actor_handler!({arbiter: &ArbiterHandler, pctl: &ProcessController, conf: &ServiceConf} => RequestsVisorActor, RequestsVisor, ReqVisorMsg);
+actor_handler!({pctl: &ProcessController, conf: &ServiceConf} => RequestsVisorActor, RequestsVisor, ReqVisorMsg);
 
 
 pub struct ErrorBack {
@@ -125,6 +167,7 @@ impl RequestsVisor {
         });
         return rx;
     }
+
     pub async fn push_fulfill(&self, req_id: &str, response: ForHttpResponse)-> Result<bool,ErrorBack> {
         let (tx2, rx2) = tokio::sync::oneshot::channel();
         let msg = ReqVisorMsg::FulfillPending {
@@ -155,10 +198,9 @@ mod tests {
 
     #[tokio::test]
     async fn visor_run() {
-        let arbiter = toktor_new!(ArbiterHandler);
         let conf = ServiceConf::default();
         let pctl = toktor_new!(ProcessController);
-        let visor = toktor_new!(RequestsVisor, &arbiter, &pctl, &conf);
+        let visor = toktor_new!(RequestsVisor, &pctl, &conf);
         let req = RestMessage::new("get", "/myurl", "");
         let rx = visor.wait_for(req);
         let (x, uuid) =  rx.await.unwrap();

@@ -1,7 +1,6 @@
 pub mod urconfig;
 pub mod serviceconf;
 pub mod cmdlineparser;
-pub mod arbiter;
 pub mod frontserv;
 pub mod backserv;
 pub mod requestsvisor;

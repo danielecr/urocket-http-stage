@@ -54,7 +54,7 @@ use std::{
 //use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 // use uuid::Uuid;
 
-use crate::arbiter::FrontResponse;
+use crate::requestsvisor::FrontResponse;
 use crate::requestsvisor::RequestsVisor;
 use crate::restmessage::RestMessage;
 
@@ -116,7 +116,7 @@ impl Service<Request<IncomingBody>> for Svc<RequestsVisor> {
         let si = self.socket.clone();
         Box::pin(async move {
             println!("receiving from {}:{}", si.ip(), si.port());
-            let uri = req.uri().clone();
+            //let uri = req.uri().clone();
             //println!("req: {:?}",req);
             //let bod = req.collect().await.unwrap().to_bytes();
             //println!("received {:?}", bod);

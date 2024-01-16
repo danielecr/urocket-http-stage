@@ -37,7 +37,7 @@ use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
 
-use crate::arbiter::ForHttpResponse;
+use crate::requestsvisor::ForHttpResponse;
 use crate::requestsvisor::RequestsVisor;
 
 // code from axum example
