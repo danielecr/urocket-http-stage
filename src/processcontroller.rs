@@ -87,6 +87,101 @@ pub struct ProcessInfos {
 
 type AtomicHash = Arc<TMutex<HashMap<String, ProcessInfos>>>;
 
+fn spawn_proce(proce: ProcEnv, proc_infos: AtomicHash, uuid: String, placeholders: HashMap<String,String>) -> () {
+    let _ = tokio::spawn(async move {
+        let start_ms = get_now_ms();
+        let timeout = proce.timeout.unwrap_or(1000);
+        let jsonpayload = {
+            if let Some(jpl) = placeholders.get("jsonpayload") {
+                jpl.clone()
+            } else {
+                "".to_string()
+            }
+        };
+        let cmd_and_args = proce.cmd_to_arr_replace("{{jsonpayload}}", &jsonpayload);
+        let comma = format!("Cmd{}: {:?}",&uuid, cmd_and_args);
+        let mut cmd_ex = Command::new(&cmd_and_args[0]);
+        cmd_ex.env("REQUEST_ID", uuid.clone());
+        for argx in cmd_and_args.iter().skip(1) {
+            cmd_ex.arg(argx);
+        }
+        for (k,v) in proce.get_env() {
+            cmd_ex.env(k,v);
+        }
+        cmd_ex.stderr(Stdio::piped());
+        cmd_ex.stdout(Stdio::piped());
+        let mut child = cmd_ex.spawn().unwrap();
+        
+        let pid = child.id();
+        let in_millis = std::time::Duration::from_millis(timeout as u64);
+        let eutanasia = std::thread::spawn(move || {
+            // sleep for at least the specified amount of time
+            std::thread::sleep(in_millis);
+            unsafe { libc::kill(pid as i32, libc::SIGTERM) }
+        });
+        let child_stdout = child
+        .stdout
+        .take()
+        .expect("Internal error, could not take stdout");
+        let child_stderr = child
+        .stderr
+        .take()
+        .expect("Internal error, could not take stderr");
+        let stdout_lines = BufReader::new(child_stdout).lines();
+        let stderr_lines = BufReader::new(child_stderr).lines();
+        let stdout_buf = stdout_lines.map(|x|{
+            match x {
+                Ok(s) => s,
+                Err(e) => format!("EE: {:?}",e)
+            }
+        }).collect::<Vec<String>>().join("\n");
+        let stderr_buf = stderr_lines.map(|x|{
+            match x {
+                Ok(s) => s,
+                Err(e) => format!("EE: {:?}",e)
+            }
+        }).collect::<Vec<String>>().join("\n");
+        match child.wait4() {
+            Ok(ruse)=> {
+                let stop_ms = get_now_ms();
+                let was_killed = if eutanasia.is_finished() {
+                    eutanasia.join().unwrap() != -1
+                } else {
+                    false
+                };
+                let b = proc_infos.clone();
+                {
+                    let mut infos = b.lock().await;
+                    let pi = ProcessInfos {
+                        uuid: uuid.to_string(),
+                        pid,
+                        start_ms,
+                        stop_ms,
+                        resources: Some(ruse),
+                        was_killed,
+                        stdout: stdout_buf,
+                        stderr: stderr_buf,
+                    };
+                    (*infos).insert(uuid.to_string(), pi);
+                    drop(infos);
+                }
+            }
+            Err(e) => {
+                println!("Execution ERROR Pid({pid}) {comma}{}", e);
+            }
+        };
+        let _selfclean = tokio::spawn(async move {
+            let pis = proc_infos.clone();
+            tokio::time::sleep(tokio::time::Duration::from_millis((timeout as u64)+ 4000)).await;
+            let mut pis = pis.lock().await;
+            let pi = (*pis).remove(&uuid);
+            if let Some(pi) = pi {
+                println!("after long run, removing staff {:?}", pi);
+            }
+        }).await;
+    });
+}
+
 struct ProcessControllerActor {
     receiver: mpsc::Receiver<ProcMsg>,
     proc_infos: AtomicHash,
@@ -106,96 +201,13 @@ impl ProcessControllerActor {
         }
     }
 
-    async fn add_proc_infos(b: AtomicHash, pid: u32, start_ms: u128, stop_ms: u128, was_killed: bool, uuid: &str, ruse: ResUse, sout: String, serr: String) {
-        let mut infos = b.lock().await;
-        let pi = ProcessInfos {
-            uuid: uuid.to_string(),
-            pid,
-            start_ms,
-            stop_ms,
-            resources: Some(ruse),
-            was_killed,
-            stdout: sout,
-            stderr: serr,
-        };
-        (*infos).insert(uuid.to_string(), pi);
-        drop(infos);
-    }
-
     fn handle_message(&mut self, msg: ProcMsg) {
         match msg {
             ProcMsg::AddProc { proce, rest_message, uuid } => {
                 let proc_infos = self.proc_infos.clone();
-                tokio::spawn(async move {
-                    let start_ms = get_now_ms();
-                    let timeout = proce.timeout.unwrap_or(1000);
-                    let cmd_and_args = proce.cmd_to_arr_replace("{{jsonpayload}}", rest_message.body());
-                    let comma = format!("Cmd{}: {:?}",&uuid, cmd_and_args);
-                    let mut cmd_ex = Command::new(&cmd_and_args[0]);
-                    cmd_ex.env("REQUEST_ID", uuid.clone());
-                    for argx in cmd_and_args.iter().skip(1) {
-                        cmd_ex.arg(argx);
-                    }
-                    for (k,v) in proce.get_env() {
-                        cmd_ex.env(k,v);
-                    }
-                    cmd_ex.stderr(Stdio::piped());
-                    cmd_ex.stdout(Stdio::piped());
-                    let mut child = cmd_ex.spawn().unwrap();
-                    
-                    let pid = child.id();
-                    let in_millis = std::time::Duration::from_millis(timeout as u64);
-                    let eutanasia = std::thread::spawn(move || {
-                        // sleep for at least the specified amount of time
-                        std::thread::sleep(in_millis);
-                        unsafe { libc::kill(pid as i32, libc::SIGTERM) }
-                    });
-                    let child_stdout = child
-                    .stdout
-                    .take()
-                    .expect("Internal error, could not take stdout");
-                    let child_stderr = child
-                    .stderr
-                    .take()
-                    .expect("Internal error, could not take stderr");
-                    let stdout_lines = BufReader::new(child_stdout).lines();
-                    let stderr_lines = BufReader::new(child_stderr).lines();
-                    let stdout_buf = stdout_lines.map(|x|{
-                        match x {
-                            Ok(s) => s,
-                            Err(e) => format!("EE: {:?}",e)
-                        }
-                    }).collect::<Vec<String>>().join("\n");
-                    let stderr_buf = stderr_lines.map(|x|{
-                        match x {
-                            Ok(s) => s,
-                            Err(e) => format!("EE: {:?}",e)
-                        }
-                    }).collect::<Vec<String>>().join("\n");
-                    match child.wait4() {
-                        Ok(ruse)=> {
-                            let stop_ms = get_now_ms();
-                            let was_killed = if eutanasia.is_finished() {
-                                eutanasia.join().unwrap() != -1
-                            } else {
-                                false
-                            };
-                            Self::add_proc_infos(proc_infos.clone(), pid, start_ms, stop_ms, was_killed, &uuid, ruse, stdout_buf, stderr_buf).await;
-                        }
-                        Err(e) => {
-                            println!("Execution ERROR Pid({pid}) {comma}{}", e);
-                        }
-                    };
-                    let _selfclean = tokio::spawn(async move {
-                        let pis = proc_infos.clone();
-                        tokio::time::sleep(tokio::time::Duration::from_millis((timeout as u64)+ 4000)).await;
-                        let mut pis = pis.lock().await;
-                        let pi = (*pis).remove(&uuid);
-                        if let Some(pi) = pi {
-                            println!("after long run, removing staff {:?}", pi);
-                        }
-                    }).await;
-                });
+                let mut placeholders = HashMap::new();
+                placeholders.insert("jsonpayload".to_string(), rest_message.body().to_string());
+                spawn_proce(proce, proc_infos, uuid, placeholders);
             }
             ProcMsg::GetInfos { uuid, tx } => {
                 // return process infos, and resource usage
