@@ -116,15 +116,9 @@ impl RequestsVisorActor {
                 tokio::spawn(async move {
                     let mut subscrs = subscriptions.lock().await;
                     if let Some(m) = subscrs.remove(&req_id) {
-                        match m {
-                            Subscriber { request_id: _, timeout: _, respond_to: tx } => {
-                                let _ = tx.send(FrontResponse::BackMsg(response));
-                                let _ = respond_to.send(Ok(true));
-                            },
-                            _ => {
-                                // Literally impossible: ProxyMsg::FulfillRequest is never inserted
-                            }
-                        };
+                        let Subscriber { request_id: _ , timeout: _, respond_to: tx } = m;
+                        let _ = tx.send(FrontResponse::BackMsg(response));
+                        let _ = respond_to.send(Ok(true));
                     } else {
                         // !!!TODO:
                         // 1. something else replied 
