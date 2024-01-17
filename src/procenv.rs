@@ -1,4 +1,4 @@
-use std::default;
+use std::collections::HashMap;
 
 /// ProcEnv process execution environment definition is used to store
 /// the environment and the command to execute the
@@ -32,19 +32,17 @@ impl From<Vec<&str>> for CmdDefinition
 }
 
 impl<'a> CmdDefinition {
-    pub fn cmd_to_arr_replace(&'a self, placeholder: &'a str, value: &'a str) -> Vec<String> {
+    pub fn cmd_to_arr_replacements(&'a self, placeholders: HashMap<&'a str,&'a str> ) -> Vec<String> {
         match &self {
             CmdDefinition::Splitted(x) => {
                 x.iter().map(|x|{
-                    let a = x.replace(placeholder, value).to_string();
-                    String::from(a)
+                    text_placeholder::Template::new(x).fill_with_hashmap(&placeholders)
                 }).collect()
             }
             CmdDefinition::ToSplit(c) => {
                 c.split(&[' ','\t'][..])
                 .map(|x|{
-                    let a = x.replace(placeholder, value).to_string();
-                    String::from(a)
+                    text_placeholder::Template::new(x).fill_with_hashmap(&placeholders)
                 })
                 .collect()
             }
@@ -68,7 +66,6 @@ impl ProcEnv {
         ProcEnv {
             wd: wd.to_string(),
             env,
-            //cmd: CmdDefinition::ToSplit(cmd.to_string()),
             cmd: CmdDefinition::from(cmd),
             encoding: encoding.to_string(),
             timeout: Some(1000),
@@ -88,10 +85,10 @@ impl ProcEnv {
         }
     }
     
-    pub fn cmd_to_arr_replace<'a>(&'a self, placeholder: &'a str, value: &'a str) -> Vec<String> {
-        self.cmd.cmd_to_arr_replace(placeholder, value)
+    pub fn cmd_to_arr_replacements<'a>(&'a self, placeholders: HashMap<&'a str,&'a str>) -> Vec<String> {
+        self.cmd.cmd_to_arr_replacements(placeholders)
     }
-
+    
     pub fn get_env(&self) -> Vec<(&str,&str)> {
         self.env.iter().map(|x|{
             let p = x.find("=").unwrap_or(0);
@@ -109,10 +106,22 @@ mod tests {
 
     #[test]
     fn execute_cmd() {
-        let cmd = CmdDefinition::from(vec!["bin/sh","echo hello world"]);
-        let v = cmd.cmd_to_arr_replace("{{string}}", "hello");
+        let cmd = CmdDefinition::from(vec!["bin/sh","echo hello world {{string}}"]);
+        let mut placeholders = HashMap::new();
+        placeholders.insert("string","hello");
+        let v = cmd.cmd_to_arr_replacements(placeholders);
+        assert_eq!("echo hello world hello", &v[1]);
         let mut c = std::process::Command::new(&v[0]);
         c.arg(&v[1]);
-        // drop everything, it is enough for test
+    }
+
+    #[test]
+    fn proc_env() {
+        let penv = ProcEnv::new("",vec![],"cmd {{jsonpayload}}","");
+        let mut placeholders = HashMap::new();
+        placeholders.insert("jsonpayload","123");
+        let v = penv.cmd_to_arr_replacements(placeholders);
+        let str = v.join(" ");
+        assert_eq!("cmd 123",&str);
     }
 }

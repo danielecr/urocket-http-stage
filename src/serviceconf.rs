@@ -117,12 +117,4 @@ mod tests {
         assert_eq!(serviceconf.servicename, "mynastyphpport");
     }
 
-    #[test]
-    fn proc_env() {
-        let penv = ProcEnv::new("",vec![],"cmd {{jsonpayload}}","");
-        let mypayload= String::from("123");
-        let v = penv.cmd_to_arr_replace("{{jsonpayload}}", &mypayload);
-        let str = v.join(" ");
-        assert_eq!("cmd 123",&str);
-    }
 }

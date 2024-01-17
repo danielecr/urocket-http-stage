@@ -87,18 +87,15 @@ pub struct ProcessInfos {
 
 type AtomicHash = Arc<TMutex<HashMap<String, ProcessInfos>>>;
 
-fn spawn_proce(proce: ProcEnv, proc_infos: AtomicHash, uuid: String, placeholders: HashMap<String,String>) -> () {
+fn spawn_proce(proce: ProcEnv, proc_infos: AtomicHash, uuid: String, placeholdersreal: HashMap<String,String>) -> () {
     let _ = tokio::spawn(async move {
         let start_ms = get_now_ms();
         let timeout = proce.timeout.unwrap_or(1000);
-        let jsonpayload = {
-            if let Some(jpl) = placeholders.get("jsonpayload") {
-                jpl.clone()
-            } else {
-                "".to_string()
-            }
-        };
-        let cmd_and_args = proce.cmd_to_arr_replace("{{jsonpayload}}", &jsonpayload);
+        let mut placeholders2: HashMap<&str, &str> = HashMap::new();
+        for (ph, val) in placeholdersreal.iter() {
+            placeholders2.insert(ph, val);
+        }
+        let cmd_and_args = proce.cmd_to_arr_replacements(placeholders2);
         let comma = format!("Cmd{}: {:?}",&uuid, cmd_and_args);
         let mut cmd_ex = Command::new(&cmd_and_args[0]);
         cmd_ex.env("REQUEST_ID", uuid.clone());
