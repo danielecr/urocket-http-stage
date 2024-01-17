@@ -32,7 +32,7 @@ impl From<Vec<&str>> for CmdDefinition
 }
 
 impl<'a> CmdDefinition {
-    pub fn cmd_to_arr_replacements(&'a self, placeholders: HashMap<&'a str,&'a str> ) -> Vec<String> {
+    pub fn cmd_to_arr_replacements(&'a self, placeholders: &HashMap<&'a str,&'a str> ) -> Vec<String> {
         match &self {
             CmdDefinition::Splitted(x) => {
                 x.iter().map(|x|{
@@ -85,7 +85,7 @@ impl ProcEnv {
         }
     }
     
-    pub fn cmd_to_arr_replacements<'a>(&'a self, placeholders: HashMap<&'a str,&'a str>) -> Vec<String> {
+    pub fn cmd_to_arr_replacements<'a>(&'a self, placeholders: &HashMap<&'a str,&'a str>) -> Vec<String> {
         self.cmd.cmd_to_arr_replacements(placeholders)
     }
     
@@ -95,6 +95,13 @@ impl ProcEnv {
             let (a,_) = x.split_at(p);
             let (_,c) = x.split_at(p+1);
             (a,c)
+        }).collect()
+    }
+
+    pub fn get_env_replacements<'a>(&'a self, placeholders: &HashMap<&'a str,&'a str>) -> Vec<(&'a str, String)> {
+        self.get_env().iter().map(|(name, val)| {
+            let v = text_placeholder::Template::new(val).fill_with_hashmap(&placeholders);
+            (*name, v)
         }).collect()
     }
 }
@@ -109,7 +116,7 @@ mod tests {
         let cmd = CmdDefinition::from(vec!["bin/sh","echo hello world {{string}}"]);
         let mut placeholders = HashMap::new();
         placeholders.insert("string","hello");
-        let v = cmd.cmd_to_arr_replacements(placeholders);
+        let v = cmd.cmd_to_arr_replacements(&placeholders);
         assert_eq!("echo hello world hello", &v[1]);
         let mut c = std::process::Command::new(&v[0]);
         c.arg(&v[1]);
@@ -120,8 +127,22 @@ mod tests {
         let penv = ProcEnv::new("",vec![],"cmd {{jsonpayload}}","");
         let mut placeholders = HashMap::new();
         placeholders.insert("jsonpayload","123");
-        let v = penv.cmd_to_arr_replacements(placeholders);
+        let v = penv.cmd_to_arr_replacements(&placeholders);
         let str = v.join(" ");
         assert_eq!("cmd 123",&str);
     }
+
+    #[test]
+    fn proc_env_var() {
+        let env = vec!["TTASK={{jsonpayload}}".to_string()];
+        let penv = ProcEnv::new("",env,"cmd {{jsonpayload}}","");
+        let mut placeholders = HashMap::new();
+        placeholders.insert("jsonpayload","123");
+        let cmdv = penv.cmd_to_arr_replacements(&placeholders);
+        let v = penv.get_env_replacements(&placeholders);
+        let v0 = &v[0];
+        assert_eq!(v0.0, "TTASK");
+        assert_eq!(v0.1,"123");
+    }
+
 }

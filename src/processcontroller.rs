@@ -95,7 +95,7 @@ fn spawn_proce(proce: ProcEnv, proc_infos: AtomicHash, uuid: String, placeholder
         for (ph, val) in placeholdersreal.iter() {
             placeholders2.insert(ph, val);
         }
-        let cmd_and_args = proce.cmd_to_arr_replacements(placeholders2);
+        let cmd_and_args = proce.cmd_to_arr_replacements(&placeholders2);
         let comma = format!("Cmd{}: {:?}",&uuid, cmd_and_args);
         let mut cmd_ex = Command::new(&cmd_and_args[0]);
         cmd_ex.env("REQUEST_ID", uuid.clone());
