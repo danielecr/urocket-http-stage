@@ -102,7 +102,7 @@ fn spawn_proce(proce: ProcEnv, proc_infos: AtomicHash, uuid: String, placeholder
         for argx in cmd_and_args.iter().skip(1) {
             cmd_ex.arg(argx);
         }
-        for (k,v) in proce.get_env() {
+        for (k,v) in proce.get_env_replacements(&placeholders2) {
             cmd_ex.env(k,v);
         }
         cmd_ex.stderr(Stdio::piped());
