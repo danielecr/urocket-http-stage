@@ -39,7 +39,9 @@ enum ReqVisorMsg {
     FulfillPending {
         req_id: String,
         response: ForHttpResponse,
-        respond_to: Sender<Result<bool,()>>
+        respond_to: Sender<bool>
+        // the response is true if req_id match some unfulfilled message
+        // it is false elsewise
     }
 }
 
@@ -118,13 +120,13 @@ impl RequestsVisorActor {
                     if let Some(m) = subscrs.remove(&req_id) {
                         let Subscriber { request_id: _ , timeout: _, respond_to: tx } = m;
                         let _ = tx.send(FrontResponse::BackMsg(response));
-                        let _ = respond_to.send(Ok(true));
+                        let _ = respond_to.send(true);
                     } else {
                         // !!!TODO:
                         // 1. something else replied 
                         // 2. receiving a message not belonging to arbiter
                         // in any case log the message
-                        let _ = respond_to.send(Err(()));
+                        let _ = respond_to.send(false);
                     }
 
                 });
@@ -135,15 +137,6 @@ impl RequestsVisorActor {
 
 actor_handler!({pctl: &ProcessController, conf: &ServiceConf} => RequestsVisorActor, RequestsVisor, ReqVisorMsg);
 
-
-pub struct ErrorBack {
-
-}
-impl std::fmt::Display for ErrorBack {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        write!(f, "some kind of message")
-    }
-}
 
 impl RequestsVisor {
     pub fn wait_for(&self, req: RestMessage) -> Receiver<(Receiver<FrontResponse>,String)> {
@@ -162,25 +155,20 @@ impl RequestsVisor {
         return rx;
     }
 
-    pub async fn push_fulfill(&self, req_id: &str, response: ForHttpResponse)-> Result<bool,ErrorBack> {
-        let (tx2, rx2) = tokio::sync::oneshot::channel();
+    pub fn push_fulfill(&self, req_id: &str, response: ForHttpResponse)-> tokio::sync::oneshot::Receiver<bool> {
+        let (tx, rx) = tokio::sync::oneshot::channel();
         let msg = ReqVisorMsg::FulfillPending {
             req_id: req_id.to_string(),
             response,
-            respond_to: tx2
+            respond_to: tx
         };
-        match toktor_send!(self, msg).await {
-            _ => println!()
-        };
-        match rx2.await {
-            Ok(result) => {
-                result.map_err(|_|{ErrorBack{}})
-            }
-            Err(_e) => {
-                Err(ErrorBack {  })
-            }
-        }
-        //Err(ErrorBack {  })
+        let s = self.clone();
+        tokio::spawn(async move {
+            match toktor_send!(s, msg).await {
+                _ => println!()
+            };
+        });
+        rx
     }
 }
 
@@ -199,10 +187,14 @@ mod tests {
         let rx = visor.wait_for(req);
         let (x, uuid) =  rx.await.unwrap();
         let response = ForHttpResponse { code: 1, data: serde_json::Value::String(String::from("helpme please")) };
-        let a = visor.push_fulfill(&uuid, response).await;
-        match a {
+        let rx = visor.push_fulfill(&uuid, response);
+        match rx.await {
             Ok(d) => {
-                println!("VISOR all fine good {}",d);
+                if d {
+                    println!("VISOR: Message matched {}",d);
+                } else {
+                    println!("VISOR: Message not matched {}",d);
+                }
             },
             Err(e) => {
                 println!("VISOR error {}",e);

@@ -20,17 +20,18 @@ tracing_subscriber::registry()
 
 
 use bytes::Bytes;
-use hyper::Error;
-use http_body_util::{combinators::BoxBody, BodyExt, Empty, Full};
+//use hyper::Error;
+//use http_body_util::{combinators::BoxBody, Empty};
+use http_body_util::{BodyExt, Full};
 
 //use http_body_util::{Full, BodyExt, StreamBody};
 
 use hyper::body::Frame;
 use hyper::server::conn::http1;
-use hyper::service::{Service, service_fn};
+use hyper::service::Service;
 use hyper::{body::Incoming as IncomingBody, Request, Response};
 use tokio::net::unix::UCred;
-use tokio::net::{TcpListener,UnixListener, UnixStream};
+use tokio::net::{UnixListener, UnixStream};
 use hyper_util::rt::TokioIo;
 
 use std::future::Future;
@@ -109,16 +110,6 @@ fn uri_extract_req_id(uri: &hyper::Uri) -> Option<String> {
         println!("bad news: {} ", uri.path());
         None
     }
-    // uri.path() is "/uri/{req_id}" -> ["","uri","{req_id}"]
-    //let rid = uri.path().replace("urhttp/","");
-    //rid
-    /*
-    if let Some(reqid) = rid {
-        reqid.to_string()
-    } else {
-        String::from("")
-    }
-    */
 }
 
 async fn getpayload(req: Request<IncomingBody>) -> Result<serde_json::Value,serde_json::Error> {
@@ -186,7 +177,7 @@ impl Service<Request<IncomingBody>> for Svc<RequestsVisor> {
                             //let (mut parts, body) = response.into_parts();
                             //Ok(Response::from_parts(parts, body))
                         }
-                        Err(e) => {
+                        Err(_e) => {
                             let b = Response::builder().status(500).body(Full::new(Bytes::from(""))).unwrap();
                             Ok(b)
                         }

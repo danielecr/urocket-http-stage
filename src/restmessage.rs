@@ -1,18 +1,7 @@
 use bytes::Bytes;
-use hyper::{body::Frame, Method};
-use http_body_util::{combinators::BoxBody, BodyExt, Empty, Full};
-use hyper::{Request, body::Incoming as IncomingBody};
-
-fn uri_extract_req_id(uri: hyper::Uri) -> String {
-    // uri.path() is "/uri/{req_id}" -> ["","uri","{req_id}"]
-    let rid = uri.path().split("/").nth(2);
-    
-    if let Some(reqid) = rid {
-        reqid.to_string()
-    } else {
-        String::from("")
-    }
-}
+use hyper::Method;
+use http_body_util::BodyExt;
+use hyper::body::Incoming as IncomingBody;
 
 /// Structure to keep the incoming request from frontserv
 #[derive(Default,Debug)]
@@ -27,7 +16,7 @@ impl RestMessage {
             Ok(m) => m,
             Err(_) => Method::GET
         };
-        Self {method: Method::GET, uri: u.to_string(), data: d.to_string()}
+        Self {method: m, uri: u.to_string(), data: d.to_string()}
     }
     /// Create a new RestMessage from the Request payload
     pub async fn parse_incoming(req: hyper::Request<IncomingBody>) -> Self {
