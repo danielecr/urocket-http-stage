@@ -27,6 +27,7 @@ use hyper::StatusCode;
 //use http_body_util::{combinators::BoxBody, BodyExt, Empty, BodyExt, StreamBody};
 use http_body_util::Full;
 
+use tracing::{info, span, warn, Level};
 
 //use hyper::body::Frame;
 use hyper::server::conn::http1;
@@ -49,21 +50,14 @@ use crate::requestsvisor::FrontResponse;
 use crate::requestsvisor::RequestsVisor;
 use crate::restmessage::RestMessage;
 
-/*
-tracing_subscriber::registry()
-.with(
-    tracing_subscriber::EnvFilter::try_from_default_env()
-    .unwrap_or_else(|_| "example_todos=debug,tower_http=debug".into()),
-)
-.with(tracing_subscriber::fmt::layer())
-.init();
-*/
 pub async fn run_front(arbiter: &RequestsVisor) {
+    span!(Level::WARN, "frontrun");
+    span!(Level::INFO, "frontrun");
     // let db = Db::default();
     let addr: SocketAddr = ([0, 0, 0, 0], 8080).into();
 
     let listener = TcpListener::bind(addr).await.unwrap();
-    println!("Listening on http://{}", addr);
+    info!("Listening on http://{}", addr);
     loop {
         let (stream, socket) = listener.accept().await.unwrap();
         let io = TokioIo::new(stream);
@@ -79,7 +73,7 @@ pub async fn run_front(arbiter: &RequestsVisor) {
                 .await
             {
                 // TODO: return a default 5xx message, anyway
-                println!("Failed to serve connection: {:?}", err);
+                warn!("Failed to serve connection: {:?}", err);
             }
         });
     }
@@ -101,17 +95,13 @@ impl Service<Request<IncomingBody>> for Svc<RequestsVisor> {
     type Response = Response<Full<Bytes>>;
     type Error = hyper::Error;
     type Future = Pin<Box<dyn Future<Output = Result<Self::Response, Self::Error>> + Send>>;
-
+    
     fn call(&self, req: Request<IncomingBody>) -> Self::Future {
         let vh = self.vh.clone();
         let si = self.socket.clone();
         Box::pin(async move {
-            println!("receiving from {}:{}", si.ip(), si.port());
-            //let uri = req.uri().clone();
-            //println!("req: {:?}",req);
-            //let bod = req.collect().await.unwrap().to_bytes();
-            //println!("received {:?}", bod);
-            //println!("thats string {} for {}", astr, uri.path());
+            
+            info!("receiving from {}:{}", si.ip(), si.port());
 
             let rmsg = RestMessage::parse_incoming(req).await;
             let visormsg = vh.wait_for(rmsg);
@@ -126,7 +116,7 @@ impl Service<Request<IncomingBody>> for Svc<RequestsVisor> {
                     panic!("RequestVisor channel error");
                 }
             };
-            println!("I stored the reqid :: {}",&req_id);
+            info!("visor stored reqid :: {}", &req_id);
             //let exresp  = rx.await;
             match rx.await {
                 Ok(x) => {

@@ -69,14 +69,16 @@ async fn read_conf_file(conf_file: &str) -> String {
     }
 }
 
+use tracing::{info};
+
 impl ServiceConf {
     pub async fn parse_service_def(configfilename: &str) -> ServiceConf {
         let content = read_conf_file(configfilename).await;
-        println!("READ\n{}",content);
+        info!("READ {} bytes from conf file {}", content.len(), &configfilename);
 
         match serde_yaml::from_str::<ServiceConf>(&content) {
             Ok(s) => {
-                println!("{:?}",&s);
+                info!("parsed {:?}",&s);
                 s
             },
             Err(e) => {

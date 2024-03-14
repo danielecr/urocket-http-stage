@@ -6,6 +6,8 @@ use tokio::sync::{mpsc, oneshot::{Receiver, Sender, self}};
 use std::sync::Arc;
 use tokio::sync::Mutex as TMutex;
 
+use tracing::{warn, info};
+
 extern crate toktor;
 use toktor::actor_handler;
 use crate::{toktor_send, serviceconf::ServiceConf, processcontroller::ProcessController};
@@ -90,14 +92,16 @@ impl RequestsVisorActor {
                                 (*subscrs).insert(uuid.clone(), msg_sub);
                                 drop(subscrs);
                             }
-                            println!("Do something {:?}", va.inject);
+                            info!("associated action def {:?}", va.inject);
                             if let Some(proce) = va.inject {
                                 pctl.run_back_process(&proce, req, &uuid).await;
+                            } else {
+                                warn!("not found");
                             }
                             let _ = respond_to.send((rx,uuid));
                         },
                         None => {
-                            println!("RequestVisor: leider it does not match any executor");
+                            warn!("No executor associated");
                             // so return something like code 500 to the caller.
                             let (tx2, rx ) = oneshot::channel();
                             let _ = tx2.send(FrontResponse::InternalError);

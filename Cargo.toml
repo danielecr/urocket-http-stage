@@ -22,3 +22,5 @@ libc = "0.2.153"
 text_placeholder = "0.5.0"
 
 toktor = { path = "toktor" }
+tracing = {version = "0.1.40", features = ["async-await"]}
+tracing-subscriber = "0.3.18"

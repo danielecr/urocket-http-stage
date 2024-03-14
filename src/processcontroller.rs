@@ -36,6 +36,10 @@ use std::process::{Command, Stdio};
 use wait4::{ResUse, Wait4};
 use std::time::{SystemTime, UNIX_EPOCH};
 
+
+use tracing::{trace, warn};
+
+
 use crate::{procenv::ProcEnv, restmessage::RestMessage};
 extern crate toktor;
 use toktor::actor_handler;
@@ -164,7 +168,7 @@ fn spawn_proce(proce: ProcEnv, proc_infos: AtomicHash, uuid: String, placeholder
                 }
             }
             Err(e) => {
-                println!("Execution ERROR Pid({pid}) {comma}{}", e);
+                trace!("Execution ERROR Pid({pid}) {comma}{}", e);
             }
         };
         let _selfclean = tokio::spawn(async move {
@@ -173,7 +177,7 @@ fn spawn_proce(proce: ProcEnv, proc_infos: AtomicHash, uuid: String, placeholder
             let mut pis = pis.lock().await;
             let pi = (*pis).remove(&uuid);
             if let Some(pi) = pi {
-                println!("after long run, removing staff {:?}", pi);
+                warn!("after long run, removing staff {:?}", pi);
             }
         }).await;
     });

@@ -4,20 +4,8 @@
 
 //use tower::{BoxError, ServiceBuilder};
 //use tower_http::trace::TraceLayer;
-//use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
-// use uuid::Uuid;
 
-/*
-tracing_subscriber::registry()
-.with(
-    tracing_subscriber::EnvFilter::try_from_default_env()
-    .unwrap_or_else(|_| "example_todos=debug,tower_http=debug".into()),
-)
-.with(tracing_subscriber::fmt::layer())
-.init();
-*/
-
-
+use tracing::{span, warn, info, Level};
 
 use bytes::Bytes;
 //use hyper::Error;
@@ -66,9 +54,10 @@ pub async fn run_backserv(socketpath: &str, rv: &RequestsVisor) {
     if path.exists() {
         tokio::fs::remove_file(path).await.expect("Could not remove old socket!");
     }
-    
+    span!(Level::WARN, "backserv");
+    span!(Level::INFO, "backserv");
     let listener = UnixListener::bind(path).unwrap();
-    println!("Backservice listening on unix:///{}", socketpath);
+    info!("Backservice listening on unix:///{}", socketpath);
     //let listener = TcpListener::bind(addr).await.unwrap();
     loop {
         let (stream, socket) = listener.accept().await.unwrap();
@@ -133,7 +122,7 @@ async fn getpayload(req: Request<IncomingBody>) -> Result<serde_json::Value,serd
         Ok(s) => s,
         Err(e) => {eprintln!("err{}",e); ""}
     };
-    println!("received payload from back: {}",_astr);
+    info!("received payload from back: {}",_astr);
     serde_json::from_slice(&str)
 }
 
@@ -143,7 +132,7 @@ impl Service<Request<IncomingBody>> for Svc<RequestsVisor> {
     type Future = Pin<Box<dyn Future<Output = Result<Self::Response, Self::Error>> + Send>>;
     
     fn call(&self, req: Request<IncomingBody>) -> Self::Future {
-        println!("receiving connection from {:?}",self.ci);
+        info!("received connection from {:?}",self.ci);
         let vh = self.rv.clone();
         Box::pin(async move {
             let uri: hyper::Uri = req.uri().clone();
@@ -155,7 +144,7 @@ impl Service<Request<IncomingBody>> for Svc<RequestsVisor> {
                             ForHttpResponse { code: 200, data: payload }
                         },
                         Err(e) => {
-                            eprintln!("error parsing backserv {}", e);
+                            warn!("error parsing backserv {}", e);
                             let payload = serde_json::Value::Bool(false);
                             ForHttpResponse { code: 500, data: payload }
                         }
@@ -166,8 +155,9 @@ impl Service<Request<IncomingBody>> for Svc<RequestsVisor> {
                         Ok(exresp) => {
                             //serde_json::to_string(value)
                             let message = if exresp {
-                                Bytes::from("ok va bene\n")
+                                Bytes::from("ok\n")
                             } else {
+                                info!("sending to back 'no-matching'");
                                 Bytes::from("Does not match any response\n")
                             };
                             let a = Response::builder().status(200).body(Full::new(message)).unwrap();
