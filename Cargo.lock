@@ -710,6 +710,13 @@ dependencies = [
 name = "toktor"
 version = "0.1.0"
 dependencies = [
+ "toktor_impl",
+]
+
+[[package]]
+name = "toktor_impl"
+version = "0.1.0"
+dependencies = [
  "proc-macro2",
  "quote",
  "syn",
