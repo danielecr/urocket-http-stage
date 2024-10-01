@@ -1,0 +1,3 @@
+[submodule "toktor"]
+	path = toktor
+	url = https://github.com/danielecr/toktor.git

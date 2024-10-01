@@ -8,23 +8,6 @@ pub mod restmessage;
 pub mod processcontroller;
 pub mod procenv;
 
-#[macro_export]
-macro_rules! toktor_send {
-    ($actorname:ident,$message:ident) => {
-        $actorname.sender.send($message)
-    };
-}
+pub use toktor::toktor_send;
 
-#[macro_export]
-macro_rules! toktor_new {
-    ($actorhand:ident, $($x:expr),* ) => {
-        {
-            $actorhand::new($($x),*)
-        }
-    };
-    ($actorhand:ident) => {
-        {
-            $actorhand::new()
-        }
-    };
-}
+pub use toktor::toktor_new;
