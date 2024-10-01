@@ -114,7 +114,7 @@ $ch = curl_init();
 // $postdata = json_encode($data); // typically
 $postdata = '{"handler": "pricechange", "pricelist": [{"articlenr":"12312", ...}]}';
 
-curl_setopt($ch, CURLOPT_UNIX_SOCKET_PATH, "/tmp/uselessrock.sock");
+curl_setopt($ch, CURLOPT_UNIX_SOCKET_PATH, "/tmp/u_rock.sock");
 
 curl_setopt($ch, CURLOPT_URL, "http://doesnotmatt.er/$reqid");
 curl_setopt($ch, CURLOPT_POST, 1);
