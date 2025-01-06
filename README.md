@@ -1,11 +1,11 @@
 # URocket http stage
 
-It proxy requests from http to an executable which is supposed to write response in a socket.
+urocket-http-stage proxies requests to an executable which will write response in a socket.
 
 Splitting the above sentence:
-- an http service that: 1. catch REST payload, 2. assign a uuid req_id
-- (*not provided*!) an executable that: 1. accept a json payload, 2. write something in a unix socket (a file)
-- an http service listening on the unix socket and match the req_id and send back to the caller
+- the http service (the front service) listen on specified port: 1. catch REST payload, 2. assign a uuid req_id
+- (*not provided*!) the executable must: 1. accept a json payload, and the uuid, in environment variables 2. write payload of response in a unix socket
+- another http service (the backend service) listening on the unix socket and match the req_id and send back to the caller
 
 Why not just nginx? This example should become a crate, a library that can be used together with other
 crate, maybe consuming messages from a message broker, in a number of way.
