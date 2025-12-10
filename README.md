@@ -1,5 +1,10 @@
 # URocket http stage
 
+**Demo**:
+![urocket demo](./urocket-demo.gif)
+
+Note: vhs can not capture and parse output, see quick example below.
+
 urocket-http-stage proxies requests to an executable which will write response in a socket.
 
 Splitting the above sentence:
@@ -29,6 +34,9 @@ sequenceDiagram
     deactivate U
     Note left of C: Our client is happy now
 ```
+**IMPORTANT**: first download submodule
+
+> git submodule update --init --recursive
 
 **Quick example**:
 
